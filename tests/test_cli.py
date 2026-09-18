@@ -10,3 +10,22 @@ def test_version_flag():
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert __version__ in result.output
+
+
+def test_init_creates_config_and_collection(tmp_path):
+    cfg = tmp_path / "config.toml"
+    root = tmp_path / "coll"
+    result = runner.invoke(app, ["--config", str(cfg), "init", "--root", str(root)])
+    assert result.exit_code == 0, result.output
+    assert cfg.exists()
+    assert (root / "inbox").is_dir()
+    assert (root / ".unalphathet").is_dir()
+
+
+def test_init_json(tmp_path):
+    cfg = tmp_path / "config.toml"
+    result = runner.invoke(app, ["--config", str(cfg), "--json", "init", "--root", str(tmp_path / "c")])
+    assert result.exit_code == 0
+    import json
+
+    assert json.loads(result.output)["collection_root"].endswith("/c")
