@@ -213,3 +213,61 @@ def scan(ctx: typer.Context) -> None:
     emit(ctx, report.__dict__, human)
     if report.errors:
         raise typer.Exit(code=2)
+
+
+# --- playlists ------------------------------------------------------------------------
+
+from unalphathet.library import playlists as _playlists  # noqa: E402
+
+playlist_app = typer.Typer(help="Playlists (cross-crate, ordered).")
+app.add_typer(playlist_app, name="playlist")
+
+
+def _playlist_or_die(conn, name: str):
+    p = _playlists.get_playlist(conn, name)
+    if p is None:
+        typer.echo(f"no such playlist: {name}", err=True)
+        raise typer.Exit(code=1)
+    return p
+
+
+@playlist_app.command("ls")
+def playlist_ls(ctx: typer.Context) -> None:
+    """List playlists."""
+    conn, _, _ = open_ctx(ctx)
+    rows = [p.__dict__ for p in _playlists.list_playlists(conn)]
+    emit(ctx, rows, lambda ps: "\n".join(p["name"] for p in ps) or "(no playlists)")
+
+
+@playlist_app.command("add")
+def playlist_add(ctx: typer.Context, name: str) -> None:
+    """Create a playlist."""
+    conn, _, _ = open_ctx(ctx)
+    try:
+        p = _playlists.add_playlist(conn, name)
+    except _playlists.PlaylistExists:
+        typer.echo(f"playlist already exists: {name}", err=True)
+        raise typer.Exit(code=1) from None
+    emit(ctx, p.__dict__, lambda d: f"created playlist {d['name']}")
+
+
+@playlist_app.command("add-track")
+def playlist_add_track(ctx: typer.Context, name: str, track_id: str) -> None:
+    """Append a track (by id) to a playlist."""
+    conn, _, _ = open_ctx(ctx)
+    p = _playlist_or_die(conn, name)
+    _playlists.add_track(conn, p.id, track_id)
+    emit(
+        ctx,
+        {"playlist": p.name, "track_id": track_id},
+        lambda d: f"added {d['track_id']} to {d['playlist']}",
+    )
+
+
+@playlist_app.command("export")
+def playlist_export(ctx: typer.Context, name: str) -> None:
+    """Write playlists/<name>.m3u8."""
+    conn, root, _ = open_ctx(ctx)
+    p = _playlist_or_die(conn, name)
+    out = _playlists.export_m3u8(conn, root, p.id)
+    emit(ctx, {"path": str(out)}, lambda d: d["path"])

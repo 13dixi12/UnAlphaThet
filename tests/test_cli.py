@@ -82,3 +82,16 @@ def test_scan_cli(collection):
     import json
 
     assert json.loads(result.output)["added"] == 3
+
+
+def test_playlist_cli(collection):
+    cfg = _cfg(collection.parent, collection)
+    runner.invoke(app, ["--config", cfg, "scan"])
+    import json
+
+    tracks = json.loads(runner.invoke(app, ["--config", cfg, "--json", "ls", "psy"]).output)
+    assert runner.invoke(app, ["--config", cfg, "playlist", "add", "set1"]).exit_code == 0
+    r = runner.invoke(app, ["--config", cfg, "playlist", "add-track", "set1", tracks[0]["id"]])
+    assert r.exit_code == 0, r.output
+    result = runner.invoke(app, ["--config", cfg, "--json", "playlist", "export", "set1"])
+    assert result.exit_code == 0 and (collection / "playlists" / "set1.m3u8").exists()
