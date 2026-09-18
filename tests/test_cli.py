@@ -69,3 +69,12 @@ def test_vibe_add_and_ls(tmp_path):
     import json
 
     assert json.loads(result.output)[0]["name"] == "night"
+
+
+def test_scan_cli(collection):
+    cfg = _cfg(collection.parent, collection)
+    result = runner.invoke(app, ["--config", cfg, "--json", "scan"])
+    assert result.exit_code == 0, result.output
+    import json
+
+    assert json.loads(result.output)["added"] == 3

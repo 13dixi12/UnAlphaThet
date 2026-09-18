@@ -7,6 +7,8 @@ MIGRATIONS for every change; never edit an applied one.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 SCHEMA_V1 = """
@@ -115,3 +117,18 @@ def open_library(root: Path) -> sqlite3.Connection:
     conn = connect(root / ".unalphathet" / "library.db")
     migrate(conn)
     return conn
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """BEGIN/COMMIT (ROLLBACK on error). Inside an outer transaction it just joins it."""
+    if conn.in_transaction:
+        yield
+        return
+    conn.execute("BEGIN")
+    try:
+        yield
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")

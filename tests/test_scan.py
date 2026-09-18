@@ -1,0 +1,141 @@
+import os
+import time
+from pathlib import Path
+
+from unalphathet.config import Config
+from unalphathet.core import scan
+from unalphathet.core.tags import read_tags, write_tags
+from unalphathet.library import vibes
+
+from .conftest import make_audio
+
+
+def _cfg(root: Path, write_back=True) -> Config:
+    return Config(collection_root=root, write_back_tags=write_back)
+
+
+def _tracks(conn):
+    return {r["rel_path"]: dict(r) for r in conn.execute("SELECT * FROM track").fetchall()}
+
+
+def test_first_scan_adds_and_stamps_ids(conn, collection):
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.added == 3 and report.errors == []
+    t = _tracks(conn)
+    assert set(t) == {
+        "psy/Astrix - Deep Jungle Walk.flac",
+        "psy/albums/Astrix - Heart.mp3",
+        "techno/Surgeon - Floorshow.m4a",
+    }
+    row = t["psy/Astrix - Deep Jungle Walk.flac"]
+    assert row["title"] == "Deep Jungle Walk" and row["state"] == "crated"
+    assert row["fingerprint"] and row["audio_hash"] and row["tags_written_at"]
+    assert read_tags(collection / "psy/Astrix - Deep Jungle Walk.flac").uat_id == row["id"]
+    assert not any(p.startswith("inbox/") for p in t)  # inbox is not scanned
+
+
+def test_rescan_is_noop(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert (report.added, report.moved, report.missing, report.tag_won, report.db_won) == (
+        0, 0, 0, 0, 0,
+    )
+
+
+def test_moved_file_keeps_id(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    before = _tracks(conn)["psy/Astrix - Deep Jungle Walk.flac"]["id"]
+    src = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    src.rename(collection / "techno" / src.name)
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.moved == 1 and report.added == 0
+    t = _tracks(conn)
+    assert t["techno/Astrix - Deep Jungle Walk.flac"]["id"] == before
+    assert "psy/Astrix - Deep Jungle Walk.flac" not in t
+
+
+def test_moved_and_stripped_file_recovered_by_fingerprint(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    src = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    before = _tracks(conn)[str(src.relative_to(collection))]["id"]
+    src.unlink()
+    make_audio(collection / "techno" / "renamed.flac", seed=11)  # same audio, no tags, new path
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.moved == 1 and report.added == 0
+    row = _tracks(conn)["techno/renamed.flac"]
+    assert row["id"] == before
+    assert row["title"] == "Deep Jungle Walk"  # DB won over the tagless file...
+    back = read_tags(collection / "techno/renamed.flac")
+    assert back.uat_id == before and back.title == "Deep Jungle Walk"  # ...and was written back
+
+
+def test_deleted_file_marked_missing(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    (collection / "techno/Surgeon - Floorshow.m4a").unlink()
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.missing == 1
+    assert _tracks(conn)["techno/Surgeon - Floorshow.m4a"]["state"] == "missing"
+
+
+def test_external_tag_edit_wins_when_newer(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    t = read_tags(p)
+    t.title = "Deep Jungle Walk (Edit)"
+    t.grouping = "psy/night"
+    write_tags(p, t)
+    future = time.time() + 5
+    os.utime(p, (future, future))
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.tag_won == 1
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    assert row["title"] == "Deep Jungle Walk (Edit)" and row["state"] == "sorted"
+    assert [v.name for v in vibes.track_vibes(conn, row["id"])] == ["night"]
+
+
+def test_db_wins_when_file_not_newer(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    conn.execute("UPDATE track SET title = 'DB Title' WHERE id = ?", (row["id"],))
+    past = time.time() - 3600
+    os.utime(p, (past, past))
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.db_won == 1
+    assert read_tags(p).title == "DB Title"  # written back
+
+
+def test_scan_without_write_back_touches_no_files(conn, collection):
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    mtime = p.stat().st_mtime
+    scan.scan(conn, collection, _cfg(collection, write_back=False))
+    assert p.stat().st_mtime == mtime
+    assert read_tags(p).uat_id is None
+    assert _tracks(conn)[str(p.relative_to(collection))]["id"]
+
+
+# --- resolve_conflict policy (Dixi, 2026-09-18) ---------------------------------------
+
+DB = {"title": "a"}
+TAGS = {"title": "b"}
+
+
+def test_conflict_newer_file_tags_win():
+    assert scan.resolve_conflict("2026-01-01T00:00:00.000000Z", "2026-01-02T00:00:00.000000Z", DB, TAGS) is scan.Source.TAGS
+
+
+def test_conflict_older_file_db_wins():
+    assert scan.resolve_conflict("2026-01-02T00:00:00.000000Z", "2026-01-01T00:00:00.000000Z", DB, TAGS) is scan.Source.DB
+
+
+def test_conflict_never_written_db_wins():
+    assert scan.resolve_conflict(None, "2026-01-01T00:00:00.000000Z", DB, TAGS) is scan.Source.DB
+
+
+def test_conflict_equal_timestamps_db_wins():
+    ts = "2026-01-01T00:00:00.000000Z"
+    assert scan.resolve_conflict(ts, ts, DB, TAGS) is scan.Source.DB
+
+
+def test_conflict_future_file_still_counts_as_newer():
+    assert scan.resolve_conflict("2026-01-01T00:00:00.000000Z", "2099-01-01T00:00:00.000000Z", DB, TAGS) is scan.Source.TAGS

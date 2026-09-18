@@ -7,6 +7,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable
 
+from unalphathet.core.db import transaction
 from unalphathet.core.models import Vibe, row_to_vibe
 
 
@@ -79,13 +80,12 @@ def set_track_vibes(
             raise VibeCrateMismatch(
                 f"vibes {sorted(bad)} do not belong to crate {crate_id} (track {track_id})"
             )
-    conn.execute("BEGIN")
-    conn.execute("DELETE FROM track_vibe WHERE track_id = ?", (track_id,))
-    conn.executemany(
-        "INSERT INTO track_vibe(track_id, vibe_id) VALUES (?, ?)",
-        [(track_id, vid) for vid in wanted],
-    )
-    conn.execute("COMMIT")
+    with transaction(conn):
+        conn.execute("DELETE FROM track_vibe WHERE track_id = ?", (track_id,))
+        conn.executemany(
+            "INSERT INTO track_vibe(track_id, vibe_id) VALUES (?, ?)",
+            [(track_id, vid) for vid in wanted],
+        )
     return track_vibes(conn, track_id)
 
 

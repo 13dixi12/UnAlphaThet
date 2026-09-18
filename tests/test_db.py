@@ -47,3 +47,17 @@ def test_vibe_unique_per_crate(tmp_path):
     conn.execute("INSERT INTO vibe(crate_id, name) VALUES (1,'night')")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO vibe(crate_id, name) VALUES (1,'night')")
+
+
+def test_transaction_rolls_back_and_nests(tmp_path):
+    conn = db.open_library(tmp_path)
+    with pytest.raises(RuntimeError):
+        with db.transaction(conn):
+            conn.execute("INSERT INTO crate(name, dir_name) VALUES ('psy','psy')")
+            raise RuntimeError("boom")
+    assert conn.execute("SELECT COUNT(*) FROM crate").fetchone()[0] == 0
+    with db.transaction(conn):
+        conn.execute("INSERT INTO crate(name, dir_name) VALUES ('psy','psy')")
+        with db.transaction(conn):  # nested: no second BEGIN
+            conn.execute("INSERT INTO crate(name, dir_name) VALUES ('techno','techno')")
+    assert conn.execute("SELECT COUNT(*) FROM crate").fetchone()[0] == 2

@@ -184,3 +184,28 @@ def vibe_add(
         typer.echo(f"vibe already exists: {crate}/{name}", err=True)
         raise typer.Exit(code=1) from None
     emit(ctx, v.__dict__, lambda d: f"added {crate}/{d['name']}")
+
+
+# --- scan -----------------------------------------------------------------------------
+
+from unalphathet.core import scan as _scan  # noqa: E402
+
+
+@app.command()
+def scan(ctx: typer.Context) -> None:
+    """Reconcile crate directories, file tags and the database."""
+    conn, root, config = open_ctx(ctx)
+    state: CliState = ctx.obj
+    progress = None if state.json else (lambda rel: typer.echo(f"  {rel}", err=True))
+    report = _scan.scan(conn, root, config, progress=progress)
+
+    def human(r: dict) -> str:
+        line = (
+            f"added {r['added']}  updated {r['updated']}  moved {r['moved']}  "
+            f"missing {r['missing']}  (tags won {r['tag_won']}, db won {r['db_won']})"
+        )
+        return line + "".join(f"\n  ! {e}" for e in r["errors"])
+
+    emit(ctx, report.__dict__, human)
+    if report.errors:
+        raise typer.Exit(code=2)
