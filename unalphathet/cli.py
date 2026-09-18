@@ -201,7 +201,12 @@ def scan(ctx: typer.Context) -> None:
     conn, root, config = open_ctx(ctx)
     state: CliState = ctx.obj
     progress = None if state.json else (lambda rel: typer.echo(f"  {rel}", err=True))
-    report = _scan.scan(conn, root, config, progress=progress)
+    try:
+        report = _scan.scan(conn, root, config, progress=progress)
+    except KeyboardInterrupt:
+        # every file is its own transaction, so what's done is done; rerunning resumes
+        typer.echo("\ninterrupted — progress is saved, run `uat scan` again to resume", err=True)
+        raise typer.Exit(code=130) from None
 
     def human(r: dict) -> str:
         line = (

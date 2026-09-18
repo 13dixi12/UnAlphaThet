@@ -245,6 +245,12 @@ def _scan_one(
     crate = crates.ensure_crate(conn, root, crate_dir)
     file_tags = read_tags(path)
     row = _fetch(conn, file_tags.uat_id) if file_tags.uat_id else None
+    if row is None:
+        # Same path, no id: the file we already know that lost its UAT_ID (write_back=false, or a
+        # tagger that strips unknown frames). No fingerprinting needed.
+        row = conn.execute(
+            "SELECT * FROM track WHERE rel_path = ?", (fs.rel_posix(root, path),)
+        ).fetchone()
     fp: str | None = None
     if row is None:
         try:
@@ -253,9 +259,9 @@ def _scan_one(
             report.errors.append(str(exc))
         if fp:
             row = _find_by_fingerprint(conn, root, fp)
-            if row is not None:  # moved + stripped: give it its id back
-                _stamp_id(conn, path, row["id"], config)
-                file_tags.uat_id = row["id"]
+    if row is not None and file_tags.uat_id != row["id"]:  # known track, id missing: restore it
+        _stamp_id(conn, path, row["id"], config)
+        file_tags.uat_id = row["id"]
     if row is not None:
         _reconcile_existing(conn, root, path, row, file_tags, crate.id, config, report)
         return row["id"]

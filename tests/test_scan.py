@@ -206,3 +206,23 @@ def test_lossy_bpm_does_not_rewrite_forever(conn, collection):
     assert scan.scan(conn, collection, _cfg(collection)).db_won == 0  # converged
     assert p.stat().st_mtime == mtime
     assert _tracks(conn)[str(p.relative_to(collection))]["bpm"] == 142.5  # DB keeps precision
+
+
+def test_rescan_without_write_back_is_clean(conn, collection):
+    cfg = _cfg(collection, write_back=False)
+    scan.scan(conn, collection, cfg)
+    report = scan.scan(conn, collection, cfg)
+    assert report.errors == []
+    assert (report.added, report.moved) == (0, 0)
+
+
+def test_stripped_id_at_same_path_is_restamped(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    before = _tracks(conn)[str(p.relative_to(collection))]["id"]
+    write_tags(p, scan.TrackTags(uat_id=None), only=("uat_id",))  # a tagger dropped our frame
+    assert read_tags(p).uat_id is None
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.errors == [] and report.moved == 0 and report.added == 0
+    assert _tracks(conn)[str(p.relative_to(collection))]["id"] == before
+    assert read_tags(p).uat_id == before
