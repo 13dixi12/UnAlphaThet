@@ -1,0 +1,41 @@
+[project]
+name = "unalphathet"
+version = "0.1.0"
+description = "rekordbox-free DJ library, inbox sorter and stick manager (TUI)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "textual>=8,<9",
+    "typer>=0.27",
+    "mutagen>=1.48",
+    "pyacoustid>=1.3",
+]
+
+[project.scripts]
+uat = "unalphathet.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=1.0",
+    "ruff>=0.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["unalphathet"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
