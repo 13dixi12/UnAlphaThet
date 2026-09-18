@@ -276,13 +276,31 @@ Search/sort by BPM/key/energy. Per-stick badge column (`A✓ B~ C·`), filters `
    one-keypress screen for re-encodes (tier 3, better file preselected; newcomer wins = **upgrade** in place,
    UUID/vibes/playlists/stick memberships kept, affected sticks → `audio_stale`), flag-only for fuzzy (tier 4).
    Losers → `inbox/_trash/dupes/<date>/`, journaled, never `rm`.
-3. **Tag write-back fields** (Phase 1, when `tags.py` is written) — proposal: `UAT_ID` (ingest), `GROUPING` =
-   `crate/vibe;crate/vibe`, `GENRE` = crate name (visible on rekordbox/CDJ), `BPM`, `INITIALKEY`,
-   `REPLAYGAIN_TRACK_GAIN`/`R128_TRACK_GAIN`, `UAT_ENERGY`, `RATING`. Config `tags.write_back = true`.
-4. **Stick profiles & sync semantics** (Phase 3 start) — names/defaults, AAC vs MP3, WAV rules, stale
+3. ✅ **Tag write-back fields** (Phase 1): `UAT_ID`, `TITLE/ARTIST/ALBUM/ALBUMARTIST/GENRE`, `GROUPING` =
+   `crate/vibe;crate/vibe`, `BPM`, `INITIALKEY`, `UAT_ENERGY`. Vorbis for FLAC/Ogg, ID3 for MP3/WAV/AIFF,
+   MP4 atoms (+ freeform `----:com.apple.iTunes:*`) for M4A. Config `tags.write_back = true`.
+   Deferred: `GENRE` = crate name, `REPLAYGAIN`/`R128` loudness, `RATING` (Phase 2, when ingest sets them).
+   Open (Phase 2): read RIFF `INFO` chunks from WAVs that carry no ID3 (Bandcamp WAVs do).
+4. ✅ **Filenames** (Dixi, 2026-09-18): `Artist - Title.ext`; FAT-forbidden characters become `_`,
+   everything is transliterated to ASCII (oldest decks show garbage for UTF-8), whitespace collapses,
+   trailing dots/spaces are dropped, over-long names lose title characters first. `core/fs.safe_filename`.
+5. ✅ **Vibe invariant enforcement** (Dixi, 2026-09-18): strict. `set_track_vibes` raises
+   `VibeCrateMismatch` and changes nothing if any offered vibe is foreign or unknown; callers that expect
+   foreign entries (GROUPING from outside the app) filter first via `apply_grouping`, which counts them.
+   Scan drops all vibes when a file changes crate (`recrated`) and strips the stale GROUPING on write-back.
+6. ✅ **Scan conflict rule** (Dixi, 2026-09-18): file wins only if its mtime is strictly newer than
+   `tags_written_at`; never-written-by-us, equal, or older → DB wins and is written back. With
+   `write_back = false` nothing is written, so external edits are ignored every scan (read-only-trial mode).
+   BPM is compared at the precision the file can hold (integer for MP4 `tmpo`) so lossy formats converge.
+   A file that already carries a valid `UAT_ID` unknown to the DB keeps it (lost `library.db` = rescan).
+7. **Stick profiles & sync semantics** (Phase 3 start) — names/defaults, AAC vs MP3, WAV rules, stale
    states, sync steps, browse keys for stick assignment.
-5. **Schema + service API** — refined while writing `core/db.py` in Phase 0/1; §3 draft is the starting point.
-6. ✅ **Naming defaults** (override anytime): package `unalphathet`, CLI `uat`, config
+8. ✅ **Schema v1 + service API** — `core/db.py` (Phase 0/1). Not yet in v1: stick*, analysis, cue, history,
+   job tables (added by migration in their phases).
+9. **Phase 2 notes from Phase 1 review:** two *copies* of one file sharing a `UAT_ID` ping-pong as "moved"
+   on every scan until dedupe resolves them; first scan is sequential `fpcalc` (~0.5 s/file, Ctrl-C safe and
+   resumable because each file is its own transaction) — parallelise via the job table.
+10. ✅ **Naming defaults** (override anytime): package `unalphathet`, CLI `uat`, config
    `~/.config/unalphathet/config.toml` (XDG), collection root from config (default `~/music/dj`), DB inside the
    collection at `.unalphathet/library.db` so the collection dir is self-contained and portable.
 

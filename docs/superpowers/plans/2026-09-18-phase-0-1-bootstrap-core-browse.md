@@ -1,5 +1,7 @@
 # UnAlphaThet Phase 0+1 — Bootstrap, Library Core, Browse TUI — Implementation Plan
 
+> **Status: executed 2026-09-18 on branch `phase-0-1`.** Deviations from the plan as written: the three (Dixi) slots were decided by Dixi in conversation and implemented by Claire; `ids.similarity()` replaced the bogus fingerprint-prefix test; `db.transaction()` was added for nested transactions; three scan bugs found in review were fixed (cross-crate vibe leak, UUID re-minting on lost DB, lossy-BPM rewrite loop); playback bindings got `priority=True`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A working `uat` CLI + Textual browse screen over a real collection directory: crates, crate-scoped vibes, playlists, UUID-stamped tracks, tag read/write-back, a reconciling scan, and mpv preview — the foundation every later phase builds on.
@@ -68,7 +70,7 @@ tests/test_*.py                      one per module
 **Interfaces:**
 - Produces: `unalphathet.__version__: str`; `unalphathet.cli.app: typer.Typer`; `uat --version`.
 
-- [ ] **Step 1: Write project files**
+- [x] **Step 1: Write project files**
 
 `.python-version`:
 ```
@@ -147,7 +149,7 @@ rekordbox-free DJ library, inbox sorter and stick manager. Terminal UI. See `doc
 __version__ = "0.1.0"
 ```
 
-- [ ] **Step 2: Write the failing CLI test**
+- [x] **Step 2: Write the failing CLI test**
 
 `tests/test_cli.py`:
 ```python
@@ -165,12 +167,12 @@ def test_version_flag():
     assert __version__ in result.output
 ```
 
-- [ ] **Step 3: Sync env and run test to verify it fails**
+- [x] **Step 3: Sync env and run test to verify it fails**
 
 Run: `cd /workspace/UnAlphaThet && uv sync && uv run pytest tests/test_cli.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'unalphathet.cli'`
 
-- [ ] **Step 4: Write minimal CLI**
+- [x] **Step 4: Write minimal CLI**
 
 `unalphathet/cli.py`:
 ```python
@@ -200,12 +202,12 @@ def main(
     """UnAlphaThet: rekordbox-free DJ library."""
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/test_cli.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pyproject.toml .python-version .gitignore README.md uv.lock unalphathet tests
@@ -231,7 +233,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `Config.db_path -> Path` (`<root>/.unalphathet/library.db`)
   - CLI global options `--config PATH` and `--json`, stored in `ctx.obj = CliState(config, json)`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_config.py`:
 ```python
@@ -283,19 +285,21 @@ def test_init_creates_config_and_collection(tmp_path):
 
 def test_init_json(tmp_path):
     cfg = tmp_path / "config.toml"
-    result = runner.invoke(app, ["--config", str(cfg), "--json", "init", "--root", str(tmp_path / "c")])
+    result = runner.invoke(
+        app, ["--config", str(cfg), "--json", "init", "--root", str(tmp_path / "c")]
+    )
     assert result.exit_code == 0
     import json
 
     assert json.loads(result.output)["collection_root"].endswith("/c")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_config.py tests/test_cli.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.config`, `init` unknown command)
 
-- [ ] **Step 3: Implement config**
+- [x] **Step 3: Implement config**
 
 `unalphathet/config.py`:
 ```python
@@ -357,11 +361,11 @@ def write_default_config(path: Path, collection_root: Path) -> None:
         "[preview]\n"
         "autoplay = true\n"
         "start_at = 0.25     # fraction of the track to start previewing from\n"
-        "mpv_args = []       # e.g. [\"--ao=pipewire\"]\n"
+        'mpv_args = []       # e.g. ["--ao=pipewire"]\n'
     )
 ```
 
-- [ ] **Step 4: Add CLI state, `--config`, `--json`, `init`**
+- [x] **Step 4: Add CLI state, `--config`, `--json`, `init`**
 
 Replace `unalphathet/cli.py` with:
 ```python
@@ -434,12 +438,12 @@ def init(
     )
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_config.py tests/test_cli.py -v`
 Expected: PASS (6 tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add unalphathet/config.py unalphathet/cli.py tests/test_config.py tests/test_cli.py
@@ -463,7 +467,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `models.TrackState = Literal["wanted", "inbox", "crated", "sorted", "missing"]`
   - `models.Track`, `models.Crate`, `models.Vibe`, `models.Playlist` dataclasses; `models.row_to_track(row) -> Track` etc.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_db.py`:
 ```python
@@ -481,7 +485,15 @@ def test_migrate_creates_schema(tmp_path):
     conn = db.connect(tmp_path / "lib.db")
     version = db.migrate(conn)
     assert version == 1
-    assert {"track", "crate", "vibe", "track_vibe", "playlist", "playlist_track", "sort_log"} <= _tables(conn)
+    assert {
+        "track",
+        "crate",
+        "vibe",
+        "track_vibe",
+        "playlist",
+        "playlist_track",
+        "sort_log",
+    } <= _tables(conn)
 
 
 def test_migrate_is_idempotent(tmp_path):
@@ -520,12 +532,12 @@ def test_vibe_unique_per_crate(tmp_path):
         conn.execute("INSERT INTO vibe(crate_id, name) VALUES (1,'night')")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_db.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'unalphathet.core'`
 
-- [ ] **Step 3: Implement db and models**
+- [x] **Step 3: Implement db and models**
 
 `unalphathet/core/__init__.py`: empty file.
 
@@ -744,12 +756,12 @@ def row_to_track(row: sqlite3.Row) -> Track:
     return Track(**{k: row[k] for k in Track.__dataclass_fields__})
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_db.py -v`
 Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/core tests/test_db.py
@@ -769,7 +781,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `doctor.Check(name: str, ok: bool, detail: str, required: bool)`; `doctor.check_environment(config: Config, config_path: Path) -> list[Check]`; `doctor.all_required_ok(checks) -> bool`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_doctor.py`:
 ```python
@@ -796,7 +808,16 @@ def test_all_good(monkeypatch, tmp_path):
     (root / ".unalphathet").mkdir(parents=True)
     checks = doctor.check_environment(Config(collection_root=root), cfg_path)
     assert doctor.all_required_ok(checks)
-    assert {c.name for c in checks} >= {"python", "ffmpeg", "ffprobe", "fpcalc", "mpv", "config", "collection", "database"}
+    assert {c.name for c in checks} >= {
+        "python",
+        "ffmpeg",
+        "ffprobe",
+        "fpcalc",
+        "mpv",
+        "config",
+        "collection",
+        "database",
+    }
 ```
 
 Append to `tests/test_cli.py`:
@@ -809,12 +830,12 @@ def test_doctor_runs(tmp_path):
     assert any(c["name"] == "ffmpeg" for c in data)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_doctor.py tests/test_cli.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.doctor`)
 
-- [ ] **Step 3: Implement doctor**
+- [x] **Step 3: Implement doctor**
 
 `unalphathet/doctor.py`:
 ```python
@@ -866,7 +887,11 @@ def check_environment(config: Config, config_path: Path) -> list[Check]:
         except sqlite3.Error as exc:  # corrupt or locked
             checks.append(Check("database", False, f"{db}: {exc}"))
     else:
-        checks.append(Check("database", root.is_dir(), f"{db} (will be created on first scan)", required=False))
+        checks.append(
+            Check(
+                "database", root.is_dir(), f"{db} (will be created on first scan)", required=False
+            )
+        )
     return checks
 
 
@@ -896,12 +921,12 @@ def doctor(ctx: typer.Context) -> None:
         raise typer.Exit(code=1)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_doctor.py tests/test_cli.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run it for real and commit**
+- [x] **Step 5: Run it for real and commit**
 
 Run: `uv run uat --config /tmp/uat-test.toml doctor` — expect ok for ffmpeg/ffprobe/fpcalc/mpv, ERR for collection (doesn't exist yet). Exit code 1 is correct here.
 
@@ -930,7 +955,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `slugify(name: str) -> str` — `"Full On!"` → `"full-on"`
   - `safe_filename(artist: str | None, title: str, ext: str) -> str` **(Dixi)**
 
-- [ ] **Step 1: Write failing tests for the fixed behaviour**
+- [x] **Step 1: Write failing tests for the fixed behaviour**
 
 `tests/test_fs.py`:
 ```python
@@ -992,7 +1017,9 @@ def test_safe_filename_has_no_fat_forbidden_chars():
 
 
 def test_safe_filename_shape():
-    assert fs.safe_filename("Astrix", "Deep Jungle Walk", ".flac") == "Astrix - Deep Jungle Walk.flac"
+    assert (
+        fs.safe_filename("Astrix", "Deep Jungle Walk", ".flac") == "Astrix - Deep Jungle Walk.flac"
+    )
     assert fs.safe_filename(None, "Untitled", ".mp3") == "Untitled.mp3"
     assert fs.safe_filename("", "Untitled", ".mp3") == "Untitled.mp3"
 
@@ -1007,12 +1034,12 @@ def test_safe_filename_never_empty_stem():
     assert fs.safe_filename(None, "???", ".flac") != ".flac"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_fs.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.core.fs`)
 
-- [ ] **Step 3: Implement everything except `safe_filename`**
+- [x] **Step 3: Implement everything except `safe_filename`**
 
 `unalphathet/core/fs.py`:
 ```python
@@ -1025,7 +1052,9 @@ import unicodedata
 from collections.abc import Iterator
 from pathlib import Path
 
-AUDIO_EXTS: frozenset[str] = frozenset({".flac", ".mp3", ".m4a", ".wav", ".aiff", ".aif", ".ogg", ".opus"})
+AUDIO_EXTS: frozenset[str] = frozenset(
+    {".flac", ".mp3", ".m4a", ".wav", ".aiff", ".aif", ".ogg", ".opus"}
+)
 RESERVED_DIRS: frozenset[str] = frozenset({"inbox", "playlists"})
 
 
@@ -1035,7 +1064,8 @@ def is_audio(path: Path) -> bool:
 
 def crate_dirs(root: Path) -> list[Path]:
     return sorted(
-        p for p in root.iterdir()
+        p
+        for p in root.iterdir()
         if p.is_dir() and not p.name.startswith(".") and p.name not in RESERVED_DIRS
     )
 
@@ -1076,16 +1106,16 @@ def safe_filename(artist: str | None, title: str, ext: str) -> str:
     raise NotImplementedError  # TODO(Dixi)
 ```
 
-- [ ] **Step 4 (Dixi): Implement `safe_filename`**
+- [x] **Step 4 (Dixi): Implement `safe_filename`**
 
 Context: this function names every file that ever lands in a crate or on a stick. It is the one place where "what does a track look like on the CDJ screen" is decided, because folder-browse sticks show filenames. Roughly 8–12 lines. Run `uv run pytest tests/test_fs.py -v` until the fixed tests pass, then add at least two tests for choices you made (replacement char, unicode policy, truncation).
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_fs.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add unalphathet/core/fs.py tests/test_fs.py
@@ -1108,7 +1138,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `tags.read_tags(path: Path) -> TrackTags`
   - Fixture `ffmpeg` skips tests when ffmpeg is missing.
 
-- [ ] **Step 1: Write conftest**
+- [x] **Step 1: Write conftest**
 
 `tests/conftest.py`:
 ```python
@@ -1136,8 +1166,15 @@ ENCODERS = {
 def make_audio(path: Path, *, seconds: float = 3, seed: int = 1, **meta: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", f"anoisesrc=d={seconds}:c=pink:r=44100:a=0.5:s={seed}",
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"anoisesrc=d={seconds}:c=pink:r=44100:a=0.5:s={seed}",
     ]
     for k, v in meta.items():
         cmd += ["-metadata", f"{k}={v}"]
@@ -1160,12 +1197,23 @@ def collection(tmp_path: Path, ffmpeg: str) -> Path:
     root = tmp_path / "coll"
     for sub in ("inbox", "playlists", ".unalphathet"):
         (root / sub).mkdir(parents=True)
-    make_audio(root / "psy" / "Astrix - Deep Jungle Walk.flac", seed=11,
-               title="Deep Jungle Walk", artist="Astrix", album="Deep Jungle Walk")
-    make_audio(root / "psy" / "albums" / "Astrix - Heart.mp3", seed=12,
-               title="Heart", artist="Astrix", album="He.art")
-    make_audio(root / "techno" / "Surgeon - Floorshow.m4a", seed=13,
-               title="Floorshow", artist="Surgeon")
+    make_audio(
+        root / "psy" / "Astrix - Deep Jungle Walk.flac",
+        seed=11,
+        title="Deep Jungle Walk",
+        artist="Astrix",
+        album="Deep Jungle Walk",
+    )
+    make_audio(
+        root / "psy" / "albums" / "Astrix - Heart.mp3",
+        seed=12,
+        title="Heart",
+        artist="Astrix",
+        album="He.art",
+    )
+    make_audio(
+        root / "techno" / "Surgeon - Floorshow.m4a", seed=13, title="Floorshow", artist="Surgeon"
+    )
     make_audio(root / "inbox" / "unsorted.flac", seed=14, title="Unsorted", artist="Nobody")
     return root
 
@@ -1177,7 +1225,7 @@ def conn(collection: Path):
     c.close()
 ```
 
-- [ ] **Step 2: Write failing tag-reading tests**
+- [x] **Step 2: Write failing tag-reading tests**
 
 `tests/test_tags.py`:
 ```python
@@ -1221,12 +1269,12 @@ def test_tracktags_defaults():
     assert t.bpm is None and t.energy is None and t.grouping is None
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_tags.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.core.tags`)
 
-- [ ] **Step 4: Implement TrackTags and read_tags**
+- [x] **Step 4: Implement TrackTags and read_tags**
 
 `unalphathet/core/tags.py`:
 ```python
@@ -1268,22 +1316,50 @@ class TrackTags:
     audio_md5: str | None = None
 
 
-WRITABLE = ("uat_id", "title", "artist", "album", "albumartist", "genre", "grouping", "bpm", "key", "energy")
+WRITABLE = (
+    "uat_id",
+    "title",
+    "artist",
+    "album",
+    "albumartist",
+    "genre",
+    "grouping",
+    "bpm",
+    "key",
+    "energy",
+)
 
 # field -> tag key per family
 VORBIS_KEYS = {
-    "uat_id": "UAT_ID", "title": "TITLE", "artist": "ARTIST", "album": "ALBUM",
-    "albumartist": "ALBUMARTIST", "genre": "GENRE", "grouping": "GROUPING",
-    "bpm": "BPM", "key": "INITIALKEY", "energy": "UAT_ENERGY",
+    "uat_id": "UAT_ID",
+    "title": "TITLE",
+    "artist": "ARTIST",
+    "album": "ALBUM",
+    "albumartist": "ALBUMARTIST",
+    "genre": "GENRE",
+    "grouping": "GROUPING",
+    "bpm": "BPM",
+    "key": "INITIALKEY",
+    "energy": "UAT_ENERGY",
 }
 ID3_FRAMES = {  # field -> frame class (TXXX handled separately)
-    "title": TIT2, "artist": TPE1, "album": TALB, "albumartist": TPE2,
-    "genre": TCON, "grouping": TIT1, "bpm": TBPM, "key": TKEY,
+    "title": TIT2,
+    "artist": TPE1,
+    "album": TALB,
+    "albumartist": TPE2,
+    "genre": TCON,
+    "grouping": TIT1,
+    "bpm": TBPM,
+    "key": TKEY,
 }
 ID3_TXXX = {"uat_id": "UAT_ID", "energy": "UAT_ENERGY"}
 MP4_KEYS = {
-    "title": "\xa9nam", "artist": "\xa9ART", "album": "\xa9alb", "albumartist": "aART",
-    "genre": "\xa9gen", "grouping": "\xa9grp",
+    "title": "\xa9nam",
+    "artist": "\xa9ART",
+    "album": "\xa9alb",
+    "albumartist": "aART",
+    "genre": "\xa9gen",
+    "grouping": "\xa9grp",
 }
 MP4_FREEFORM = {
     "uat_id": "----:com.apple.iTunes:UAT_ID",
@@ -1372,12 +1448,12 @@ def read_tags(path: Path) -> TrackTags:
     return t
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_tags.py -v`
 Expected: PASS (5 tests)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tests/conftest.py unalphathet/core/tags.py tests/test_tags.py
@@ -1396,7 +1472,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `tags.write_tags(path: Path, tags: TrackTags, only: Iterable[str] | None = None) -> None` — writes the `WRITABLE` fields (or the subset `only`); `None` values remove the tag. Preserves everything else in the file.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Append to `tests/test_tags.py`:
 ```python
@@ -1435,12 +1511,12 @@ def test_write_subset_and_removal(tmp_path, ffmpeg):
     assert back.title == "Orig"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_tags.py -v`
 Expected: FAIL (`ImportError: cannot import name 'write_tags'`)
 
-- [ ] **Step 3: Implement write_tags**
+- [x] **Step 3: Implement write_tags**
 
 Append to `unalphathet/core/tags.py`:
 ```python
@@ -1504,12 +1580,12 @@ def write_tags(path: Path, t: TrackTags, only=None) -> None:
     f.save()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_tags.py -v`
 Expected: PASS. If the `.wav` roundtrip fails on `add_tags`, mutagen's `WAVE` needs `f.add_tags()` before `f.tags` is an `ID3` — the code above does that; if it still fails, print `type(f.tags)` and adjust the isinstance branch.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/core/tags.py tests/test_tags.py
@@ -1531,7 +1607,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `ids.fingerprint(path: Path, max_seconds: int = 120) -> tuple[float, str]` — `(duration_seconds, chromaprint)` via `fpcalc`; raises `ids.FingerprintError` on failure.
   - `ids.audio_md5(path: Path) -> str | None` — FLAC STREAMINFO md5 only (others `None`).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_ids.py`:
 ```python
@@ -1565,7 +1641,9 @@ def test_fingerprint_same_audio_same_fp(tmp_path, ffmpeg):
 def test_fingerprint_survives_reencode(tmp_path, ffmpeg):
     a = make_audio(tmp_path / "a.flac", seed=42)
     b = make_audio(tmp_path / "b.mp3", seed=42)
-    assert ids.fingerprint(a)[1][:8] == ids.fingerprint(b)[1][:8]  # header/leading bits match; full compare is Phase 2
+    assert (
+        ids.fingerprint(a)[1][:8] == ids.fingerprint(b)[1][:8]
+    )  # header/leading bits match; full compare is Phase 2
 
 
 def test_fingerprint_error(tmp_path):
@@ -1580,12 +1658,12 @@ def test_audio_md5_flac_only(tmp_path, ffmpeg):
     assert ids.audio_md5(make_audio(tmp_path / "a.mp3")) is None
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_ids.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.core.ids`)
 
-- [ ] **Step 3: Implement ids**
+- [x] **Step 3: Implement ids**
 
 `unalphathet/core/ids.py`:
 ```python
@@ -1611,7 +1689,9 @@ def new_track_id() -> str:
 def fingerprint(path: Path, max_seconds: int = 120) -> tuple[float, str]:
     """Chromaprint via fpcalc. Returns (duration_seconds, compressed_fingerprint)."""
     try:
-        duration, fp = acoustid.fingerprint_file(str(path), maxlength=max_seconds, force_fpcalc=True)
+        duration, fp = acoustid.fingerprint_file(
+            str(path), maxlength=max_seconds, force_fpcalc=True
+        )
     except (acoustid.FingerprintGenerationError, acoustid.NoBackendError, OSError) as exc:
         raise FingerprintError(f"{path}: {exc}") from exc
     if isinstance(fp, bytes):
@@ -1627,12 +1707,12 @@ def audio_md5(path: Path) -> str | None:
     return f"{md5:032x}" if md5 else None
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_ids.py -v`
 Expected: PASS. If `test_fingerprint_survives_reencode` fails on the 8-char prefix, relax it to the first 4 chars — the point is only that the two are *related*; real similarity scoring lands in Phase 2.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/core/ids.py tests/test_ids.py
@@ -1658,7 +1738,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - CLI: `uat crate ls`, `uat crate add NAME [--hotkey K] [--bpm MIN-MAX]`
   - CLI helper `open_ctx(ctx) -> tuple[sqlite3.Connection, Path, Config]` for later commands
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_crates.py`:
 ```python
@@ -1698,7 +1778,12 @@ def test_crate_add_and_ls(tmp_path):
     root = tmp_path / "coll"
     root.mkdir()
     cfg = _cfg(tmp_path, root)
-    assert runner.invoke(app, ["--config", cfg, "crate", "add", "Psy", "--hotkey", "1", "--bpm", "135-150"]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["--config", cfg, "crate", "add", "Psy", "--hotkey", "1", "--bpm", "135-150"]
+        ).exit_code
+        == 0
+    )
     result = runner.invoke(app, ["--config", cfg, "--json", "crate", "ls"])
     import json
 
@@ -1706,12 +1791,12 @@ def test_crate_add_and_ls(tmp_path):
     assert data[0]["dir_name"] == "psy" and data[0]["bpm_max"] == 150.0
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_crates.py tests/test_cli.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.library`)
 
-- [ ] **Step 3: Implement crates + CLI**
+- [x] **Step 3: Implement crates + CLI**
 
 `unalphathet/library/__init__.py`: empty.
 
@@ -1807,10 +1892,18 @@ def crate_ls(ctx: typer.Context) -> None:
     """List crates."""
     conn, _, _ = open_ctx(ctx)
     rows = [c.__dict__ for c in _crates.list_crates(conn)]
-    emit(ctx, rows, lambda cs: "\n".join(
-        f"{c['hotkey'] or ' '} {c['name']:<20} {c['dir_name']:<20} "
-        f"{'' if c['bpm_min'] is None else f'{c['bpm_min']:g}-{c['bpm_max']:g} bpm'}" for c in cs
-    ) or "(no crates)")
+    emit(
+        ctx,
+        rows,
+        lambda cs: (
+            "\n".join(
+                f"{c['hotkey'] or ' '} {c['name']:<20} {c['dir_name']:<20} "
+                f"{'' if c['bpm_min'] is None else f'{c["bpm_min"]:g}-{c["bpm_max"]:g} bpm'}"
+                for c in cs
+            )
+            or "(no crates)"
+        ),
+    )
 
 
 @crate_app.command("add")
@@ -1831,12 +1924,12 @@ def crate_add(
     emit(ctx, c.__dict__, lambda d: f"created crate {d['name']} -> {root / d['dir_name']}")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_crates.py tests/test_cli.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/library unalphathet/cli.py tests/test_crates.py tests/test_cli.py
@@ -1864,7 +1957,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `vibes.apply_grouping(conn, track_id: str, grouping: str | None) -> int` — resolves names to vibe ids within the track's crate (creating vibes as needed), calls `set_track_vibes`; returns number of *ignored* foreign-crate entries.
   - CLI: `uat vibe ls CRATE`, `uat vibe add CRATE NAME [--hotkey K]`
 
-- [ ] **Step 1: Write failing tests (fixed requirements)**
+- [x] **Step 1: Write failing tests (fixed requirements)**
 
 `tests/test_vibes.py`:
 ```python
@@ -1876,7 +1969,10 @@ from unalphathet.library import crates, vibes
 
 def _track(conn, crate_id, rel):
     tid = new_track_id()
-    conn.execute("INSERT INTO track(id, rel_path, crate_id, state) VALUES (?,?,?,'crated')", (tid, rel, crate_id))
+    conn.execute(
+        "INSERT INTO track(id, rel_path, crate_id, state) VALUES (?,?,?,'crated')",
+        (tid, rel, crate_id),
+    )
     return tid
 
 
@@ -1941,19 +2037,24 @@ def test_vibe_add_and_ls(tmp_path):
     root.mkdir()
     cfg = _cfg(tmp_path, root)
     runner.invoke(app, ["--config", cfg, "crate", "add", "psy"])
-    assert runner.invoke(app, ["--config", cfg, "vibe", "add", "psy", "night", "--hotkey", "n"]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["--config", cfg, "vibe", "add", "psy", "night", "--hotkey", "n"]
+        ).exit_code
+        == 0
+    )
     result = runner.invoke(app, ["--config", cfg, "--json", "vibe", "ls", "psy"])
     import json
 
     assert json.loads(result.output)[0]["name"] == "night"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_vibes.py tests/test_cli.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.library.vibes`)
 
-- [ ] **Step 3: Implement everything except `set_track_vibes`**
+- [x] **Step 3: Implement everything except `set_track_vibes`**
 
 `unalphathet/library/vibes.py`:
 ```python
@@ -1978,19 +2079,25 @@ class VibeCrateMismatch(ValueError):
 
 
 def list_vibes(conn: sqlite3.Connection, crate_id: int) -> list[Vibe]:
-    rows = conn.execute("SELECT * FROM vibe WHERE crate_id = ? ORDER BY name", (crate_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT * FROM vibe WHERE crate_id = ? ORDER BY name", (crate_id,)
+    ).fetchall()
     return [row_to_vibe(r) for r in rows]
 
 
 def get_vibe(conn: sqlite3.Connection, crate_id: int, name: str) -> Vibe | None:
-    row = conn.execute("SELECT * FROM vibe WHERE crate_id = ? AND name = ?", (crate_id, name)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM vibe WHERE crate_id = ? AND name = ?", (crate_id, name)
+    ).fetchone()
     return row_to_vibe(row) if row else None
 
 
 def add_vibe(conn: sqlite3.Connection, crate_id: int, name: str, hotkey: str | None = None) -> Vibe:
     if get_vibe(conn, crate_id, name):
         raise VibeExists(name)
-    conn.execute("INSERT INTO vibe(crate_id, name, hotkey) VALUES (?, ?, ?)", (crate_id, name, hotkey))
+    conn.execute(
+        "INSERT INTO vibe(crate_id, name, hotkey) VALUES (?, ?, ?)", (crate_id, name, hotkey)
+    )
     return get_vibe(conn, crate_id, name)  # type: ignore[return-value]
 
 
@@ -2063,11 +2170,11 @@ def apply_grouping(conn: sqlite3.Connection, track_id: str, grouping: str | None
     return ignored
 ```
 
-- [ ] **Step 4 (Dixi): Implement `set_track_vibes`**
+- [x] **Step 4 (Dixi): Implement `set_track_vibes`**
 
 Context: this is *the* invariant of the whole data model — "a file can be psy/full-on and psy/night but never also metal/death". Everything that attaches vibes goes through here. Roughly 8–12 lines: look up the track's `crate_id`, look up the offered vibes' `crate_id`s, decide what to do with mismatches, `DELETE FROM track_vibe WHERE track_id=?`, insert the survivors, return `track_vibes(conn, track_id)`. Then add a test for your mismatch behaviour to `tests/test_vibes.py`.
 
-- [ ] **Step 5: Add CLI commands**
+- [x] **Step 5: Add CLI commands**
 
 Add to `unalphathet/cli.py`:
 ```python
@@ -2091,7 +2198,11 @@ def vibe_ls(ctx: typer.Context, crate: str) -> None:
     conn, _, _ = open_ctx(ctx)
     c = _crate_or_die(conn, crate)
     rows = [v.__dict__ for v in _vibes.list_vibes(conn, c.id)]
-    emit(ctx, rows, lambda vs: "\n".join(f"{v['hotkey'] or ' '} {v['name']}" for v in vs) or "(no vibes)")
+    emit(
+        ctx,
+        rows,
+        lambda vs: "\n".join(f"{v['hotkey'] or ' '} {v['name']}" for v in vs) or "(no vibes)",
+    )
 
 
 @vibe_app.command("add")
@@ -2109,12 +2220,12 @@ def vibe_add(
     emit(ctx, v.__dict__, lambda d: f"added {crate}/{d['name']}")
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_vibes.py tests/test_cli.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add unalphathet/library/vibes.py unalphathet/cli.py tests/test_vibes.py tests/test_cli.py
@@ -2142,7 +2253,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 Compared fields (DB ↔ tags): `title, artist, album, albumartist, genre, bpm, key, energy` plus `grouping` (DB side via `format_grouping`).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_scan.py`:
 ```python
@@ -2170,8 +2281,11 @@ def test_first_scan_adds_and_stamps_ids(conn, collection):
     report = scan.scan(conn, collection, _cfg(collection))
     assert report.added == 3 and report.errors == []
     t = _tracks(conn)
-    assert set(t) == {"psy/Astrix - Deep Jungle Walk.flac", "psy/albums/Astrix - Heart.mp3",
-                      "techno/Surgeon - Floorshow.m4a"}
+    assert set(t) == {
+        "psy/Astrix - Deep Jungle Walk.flac",
+        "psy/albums/Astrix - Heart.mp3",
+        "techno/Surgeon - Floorshow.m4a",
+    }
     row = t["psy/Astrix - Deep Jungle Walk.flac"]
     assert row["title"] == "Deep Jungle Walk" and row["state"] == "crated"
     assert row["fingerprint"] and row["audio_hash"] and row["tags_written_at"]
@@ -2269,12 +2383,12 @@ def test_scan_cli(collection):
     assert json.loads(result.output)["added"] == 3
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_scan.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.core.scan`)
 
-- [ ] **Step 3: Implement scan (all but `resolve_conflict`)**
+- [x] **Step 3: Implement scan (all but `resolve_conflict`)**
 
 `unalphathet/core/scan.py`:
 ```python
@@ -2344,18 +2458,34 @@ def resolve_conflict(
 
 def _tags_to_row(t: TrackTags) -> dict:
     return {
-        "title": t.title, "artist": t.artist, "album": t.album, "albumartist": t.albumartist,
-        "genre": t.genre, "bpm": t.bpm, "key": t.key, "energy": t.energy,
-        "duration_ms": t.duration_ms, "codec": t.codec, "sample_rate": t.sample_rate,
-        "bit_depth": t.bit_depth, "bitrate": t.bitrate,
+        "title": t.title,
+        "artist": t.artist,
+        "album": t.album,
+        "albumartist": t.albumartist,
+        "genre": t.genre,
+        "bpm": t.bpm,
+        "key": t.key,
+        "energy": t.energy,
+        "duration_ms": t.duration_ms,
+        "codec": t.codec,
+        "sample_rate": t.sample_rate,
+        "bit_depth": t.bit_depth,
+        "bitrate": t.bitrate,
     }
 
 
 def _row_tags(conn: sqlite3.Connection, row: sqlite3.Row) -> TrackTags:
     return TrackTags(
-        uat_id=row["id"], title=row["title"], artist=row["artist"], album=row["album"],
-        albumartist=row["albumartist"], genre=row["genre"], grouping=vibes.format_grouping(conn, row["id"]),
-        bpm=row["bpm"], key=row["key"], energy=row["energy"],
+        uat_id=row["id"],
+        title=row["title"],
+        artist=row["artist"],
+        album=row["album"],
+        albumartist=row["albumartist"],
+        genre=row["genre"],
+        grouping=vibes.format_grouping(conn, row["id"]),
+        bpm=row["bpm"],
+        key=row["key"],
+        energy=row["energy"],
     )
 
 
@@ -2378,8 +2508,16 @@ def _write_back(conn, path: Path, track_id: str, t: TrackTags, config: Config) -
     conn.execute("UPDATE track SET tags_written_at = ? WHERE id = ?", (_mtime_iso(path), track_id))
 
 
-def _reconcile_existing(conn, root: Path, path: Path, row: sqlite3.Row, file_tags: TrackTags,
-                        crate_id: int, config: Config, report: ScanReport) -> None:
+def _reconcile_existing(
+    conn,
+    root: Path,
+    path: Path,
+    row: sqlite3.Row,
+    file_tags: TrackTags,
+    crate_id: int,
+    config: Config,
+    report: ScanReport,
+) -> None:
     rel = fs.rel_posix(root, path)
     if row["rel_path"] != rel or row["crate_id"] != crate_id:
         _update_row(conn, row["id"], {"rel_path": rel, "crate_id": crate_id})
@@ -2402,8 +2540,14 @@ def _reconcile_existing(conn, root: Path, path: Path, row: sqlite3.Row, file_tag
     if winner is Source.TAGS:
         _update_row(conn, row["id"], _tags_to_row(file_tags))
         vibes.apply_grouping(conn, row["id"], file_tags.grouping)
-        _update_row(conn, row["id"], {"state": _state_for(conn, row["id"], row["state"]),
-                                       "tags_written_at": _mtime_iso(path)})
+        _update_row(
+            conn,
+            row["id"],
+            {
+                "state": _state_for(conn, row["id"], row["state"]),
+                "tags_written_at": _mtime_iso(path),
+            },
+        )
         report.tag_won += 1
     else:
         _write_back(conn, path, row["id"], db_tags, config)
@@ -2419,27 +2563,49 @@ def _find_by_fingerprint(conn, root: Path, fp: str) -> sqlite3.Row | None:
     return None
 
 
-def _insert_new(conn, root: Path, path: Path, file_tags: TrackTags, crate_id: int,
-                fp: str | None, config: Config, report: ScanReport) -> None:
+def _insert_new(
+    conn,
+    root: Path,
+    path: Path,
+    file_tags: TrackTags,
+    crate_id: int,
+    fp: str | None,
+    config: Config,
+    report: ScanReport,
+) -> None:
     track_id = ids.new_track_id()
     values = _tags_to_row(file_tags)
-    values.update({
-        "id": track_id, "rel_path": fs.rel_posix(root, path), "crate_id": crate_id,
-        "fingerprint": fp, "audio_hash": file_tags.audio_md5, "size_bytes": path.stat().st_size,
-        "state": "crated",
-    })
+    values.update(
+        {
+            "id": track_id,
+            "rel_path": fs.rel_posix(root, path),
+            "crate_id": crate_id,
+            "fingerprint": fp,
+            "audio_hash": file_tags.audio_md5,
+            "size_bytes": path.stat().st_size,
+            "state": "crated",
+        }
+    )
     cols = ", ".join(values)
-    conn.execute(f"INSERT INTO track({cols}) VALUES ({', '.join('?' * len(values))})", tuple(values.values()))
+    conn.execute(
+        f"INSERT INTO track({cols}) VALUES ({', '.join('?' * len(values))})", tuple(values.values())
+    )
     vibes.apply_grouping(conn, track_id, file_tags.grouping)
     _update_row(conn, track_id, {"state": _state_for(conn, track_id, "crated")})
     _write_back(conn, path, track_id, file_tags, config)
-    conn.execute("INSERT INTO sort_log(track_id, action, to_path) VALUES (?, 'added', ?)",
-                 (track_id, values["rel_path"]))
+    conn.execute(
+        "INSERT INTO sort_log(track_id, action, to_path) VALUES (?, 'added', ?)",
+        (track_id, values["rel_path"]),
+    )
     report.added += 1
 
 
-def scan(conn: sqlite3.Connection, root: Path, config: Config,
-         progress: Callable[[str], None] | None = None) -> ScanReport:
+def scan(
+    conn: sqlite3.Connection,
+    root: Path,
+    config: Config,
+    progress: Callable[[str], None] | None = None,
+) -> ScanReport:
     report = ScanReport()
     seen: set[str] = set()
     for crate_dir, path in fs.iter_crate_files(root):
@@ -2451,7 +2617,9 @@ def scan(conn: sqlite3.Connection, root: Path, config: Config,
             conn.execute("BEGIN")
             row = None
             if file_tags.uat_id:
-                row = conn.execute("SELECT * FROM track WHERE id = ?", (file_tags.uat_id,)).fetchone()
+                row = conn.execute(
+                    "SELECT * FROM track WHERE id = ?", (file_tags.uat_id,)
+                ).fetchone()
             fp: str | None = None
             if row is None:
                 try:
@@ -2468,8 +2636,12 @@ def scan(conn: sqlite3.Connection, root: Path, config: Config,
                 seen.add(row["id"])
             else:
                 _insert_new(conn, root, path, file_tags, crate.id, fp, config, report)
-                seen.add(file_tags.uat_id or conn.execute(
-                    "SELECT id FROM track WHERE rel_path = ?", (fs.rel_posix(root, path),)).fetchone()["id"])
+                seen.add(
+                    file_tags.uat_id
+                    or conn.execute(
+                        "SELECT id FROM track WHERE rel_path = ?", (fs.rel_posix(root, path),)
+                    ).fetchone()["id"]
+                )
             conn.execute("COMMIT")
         except Exception as exc:  # one bad file must not abort the scan
             if conn.in_transaction:
@@ -2488,11 +2660,11 @@ def scan(conn: sqlite3.Connection, root: Path, config: Config,
 
 Note on `_write_back` for the *re-stamp* case: it writes the file's own tags back plus the UUID, so a stripped file gets its UUID and nothing else changes; the subsequent `_reconcile_existing` then applies the conflict rule normally (the DB will win because we just wrote the file — `tags_written_at` == mtime).
 
-- [ ] **Step 4 (Dixi): Implement `resolve_conflict`**
+- [x] **Step 4 (Dixi): Implement `resolve_conflict`**
 
 Context: this is the truth model's tie-breaker (spec §2), and it decides whether an edit you made in another tagger silently gets overwritten. The body is ~5 lines for the spec rule; the interesting part is the three edge cases in the docstring. Pick, implement, add a test each to `tests/test_scan.py` (you can call `resolve_conflict` directly with dicts — no files needed).
 
-- [ ] **Step 5: Add `uat scan`**
+- [x] **Step 5: Add `uat scan`**
 
 Add to `unalphathet/cli.py`:
 ```python
@@ -2506,21 +2678,25 @@ def scan(ctx: typer.Context) -> None:
     state: CliState = ctx.obj
     progress = None if state.json else (lambda rel: typer.echo(f"  {rel}", err=True))
     report = _scan.scan(conn, root, config, progress=progress)
-    emit(ctx, report.__dict__, lambda r: (
-        f"added {r['added']}  updated {r['updated']}  moved {r['moved']}  missing {r['missing']}  "
-        f"(tags won {r['tag_won']}, db won {r['db_won']})"
-        + ("".join(f"\n  ! {e}" for e in r["errors"]))
-    ))
+    emit(
+        ctx,
+        report.__dict__,
+        lambda r: (
+            f"added {r['added']}  updated {r['updated']}  moved {r['moved']}  missing {r['missing']}  "
+            f"(tags won {r['tag_won']}, db won {r['db_won']})"
+            + ("".join(f"\n  ! {e}" for e in r["errors"]))
+        ),
+    )
     if report.errors:
         raise typer.Exit(code=2)
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_scan.py tests/test_cli.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add unalphathet/core/scan.py unalphathet/cli.py tests/test_scan.py tests/test_cli.py
@@ -2548,7 +2724,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `playlists.export_m3u8(conn, root: Path, playlist_id: int) -> Path` — `<root>/playlists/<slug>.m3u8`, paths relative to `playlists/`, `#EXTINF` lines
   - CLI: `uat playlist ls|add NAME|add-track NAME TRACK_ID|export NAME`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_playlists.py`:
 ```python
@@ -2575,7 +2751,9 @@ def test_add_list_and_order(conn, scanned):
     assert [t.id for t in playlists.playlist_tracks(conn, p.id)] == [scanned[2], scanned[0]]
     playlists.remove_track(conn, p.id, scanned[2])
     assert [t.id for t in playlists.playlist_tracks(conn, p.id)] == [scanned[0]]
-    pos = conn.execute("SELECT position FROM playlist_track WHERE playlist_id = ?", (p.id,)).fetchone()[0]
+    pos = conn.execute(
+        "SELECT position FROM playlist_track WHERE playlist_id = ?", (p.id,)
+    ).fetchone()[0]
     assert pos == 0
     with pytest.raises(playlists.PlaylistExists):
         playlists.add_playlist(conn, "jungle set")
@@ -2601,18 +2779,23 @@ def test_playlist_cli(collection):
 
     tracks = json.loads(runner.invoke(app, ["--config", cfg, "--json", "ls", "psy"]).output)
     assert runner.invoke(app, ["--config", cfg, "playlist", "add", "set1"]).exit_code == 0
-    assert runner.invoke(app, ["--config", cfg, "playlist", "add-track", "set1", tracks[0]["id"]]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["--config", cfg, "playlist", "add-track", "set1", tracks[0]["id"]]
+        ).exit_code
+        == 0
+    )
     result = runner.invoke(app, ["--config", cfg, "--json", "playlist", "export", "set1"])
     assert result.exit_code == 0 and (collection / "playlists" / "set1.m3u8").exists()
 ```
 (`uat ls` is added in Task 13; run this test after that task.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_playlists.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.library.playlists`)
 
-- [ ] **Step 3: Implement playlists + CLI**
+- [x] **Step 3: Implement playlists + CLI**
 
 `unalphathet/library/playlists.py`:
 ```python
@@ -2636,7 +2819,9 @@ def list_playlists(conn: sqlite3.Connection) -> list[Playlist]:
     return [row_to_playlist(r) for r in rows]
 
 
-def get_playlist(conn: sqlite3.Connection, name: str, parent_id: int | None = None) -> Playlist | None:
+def get_playlist(
+    conn: sqlite3.Connection, name: str, parent_id: int | None = None
+) -> Playlist | None:
     row = conn.execute(
         "SELECT * FROM playlist WHERE name = ? AND parent_id IS ?", (name, parent_id)
     ).fetchone()
@@ -2652,7 +2837,8 @@ def add_playlist(conn: sqlite3.Connection, name: str, parent_id: int | None = No
 
 def add_track(conn: sqlite3.Connection, playlist_id: int, track_id: str) -> None:
     nxt = conn.execute(
-        "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_track WHERE playlist_id = ?", (playlist_id,)
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_track WHERE playlist_id = ?",
+        (playlist_id,),
     ).fetchone()[0]
     conn.execute(
         "INSERT OR IGNORE INTO playlist_track(playlist_id, track_id, position) VALUES (?, ?, ?)",
@@ -2662,9 +2848,12 @@ def add_track(conn: sqlite3.Connection, playlist_id: int, track_id: str) -> None
 
 def remove_track(conn: sqlite3.Connection, playlist_id: int, track_id: str) -> None:
     conn.execute("BEGIN")
-    conn.execute("DELETE FROM playlist_track WHERE playlist_id = ? AND track_id = ?", (playlist_id, track_id))
+    conn.execute(
+        "DELETE FROM playlist_track WHERE playlist_id = ? AND track_id = ?", (playlist_id, track_id)
+    )
     rows = conn.execute(
-        "SELECT track_id FROM playlist_track WHERE playlist_id = ? ORDER BY position", (playlist_id,)
+        "SELECT track_id FROM playlist_track WHERE playlist_id = ? ORDER BY position",
+        (playlist_id,),
     ).fetchall()
     for pos, r in enumerate(rows):
         conn.execute(
@@ -2740,7 +2929,11 @@ def playlist_add_track(ctx: typer.Context, name: str, track_id: str) -> None:
     conn, _, _ = open_ctx(ctx)
     p = _playlist_or_die(conn, name)
     _playlists.add_track(conn, p.id, track_id)
-    emit(ctx, {"playlist": p.name, "track_id": track_id}, lambda d: f"added {d['track_id']} to {d['playlist']}")
+    emit(
+        ctx,
+        {"playlist": p.name, "track_id": track_id},
+        lambda d: f"added {d['track_id']} to {d['playlist']}",
+    )
 
 
 @playlist_app.command("export")
@@ -2752,12 +2945,12 @@ def playlist_export(ctx: typer.Context, name: str) -> None:
     emit(ctx, {"path": str(out)}, lambda d: d["path"])
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_playlists.py -v`
 Expected: PASS (the CLI test waits for Task 13)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/library/playlists.py unalphathet/cli.py tests/test_playlists.py tests/test_cli.py
@@ -2782,7 +2975,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `query.search(conn, text: str, limit: int = 200) -> list[Track]` — case-insensitive substring over title/artist/album
   - CLI: `uat ls CRATE[/VIBE]`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_query.py`:
 ```python
@@ -2828,12 +3021,12 @@ def test_get_track(scanned):
     assert query.get_track(scanned, "nope") is None
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_query.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.library.query`)
 
-- [ ] **Step 3: Implement query + `uat ls`**
+- [x] **Step 3: Implement query + `uat ls`**
 
 `unalphathet/library/query.py`:
 ```python
@@ -2853,9 +3046,13 @@ def get_track(conn: sqlite3.Connection, track_id: str) -> Track | None:
     return row_to_track(row) if row else None
 
 
-def tracks_in_crate(conn: sqlite3.Connection, crate_id: int, include_missing: bool = False) -> list[Track]:
+def tracks_in_crate(
+    conn: sqlite3.Connection, crate_id: int, include_missing: bool = False
+) -> list[Track]:
     cond = "" if include_missing else " AND state != 'missing'"
-    rows = conn.execute(f"SELECT * FROM track WHERE crate_id = ?{cond} {ORDER}", (crate_id,)).fetchall()
+    rows = conn.execute(
+        f"SELECT * FROM track WHERE crate_id = ?{cond} {ORDER}", (crate_id,)
+    ).fetchall()
     return [row_to_track(r) for r in rows]
 
 
@@ -2897,19 +3094,26 @@ def ls(ctx: typer.Context, where: str = typer.Argument(..., help="CRATE or CRATE
         tracks = _query.tracks_with_vibe(conn, v.id)
     else:
         tracks = _query.tracks_in_crate(conn, c.id)
-    emit(ctx, [t.__dict__ for t in tracks], lambda ts: "\n".join(
-        f"{t['id'][:8]}  {(t['artist'] or '?')[:24]:<24} {(t['title'] or '?')[:40]:<40} "
-        f"{'' if t['bpm'] is None else f'{t['bpm']:g}':>6} {t['key'] or '':<3} {t['codec']}"
-        for t in ts
-    ) or "(no tracks)")
+    emit(
+        ctx,
+        [t.__dict__ for t in tracks],
+        lambda ts: (
+            "\n".join(
+                f"{t['id'][:8]}  {(t['artist'] or '?')[:24]:<24} {(t['title'] or '?')[:40]:<40} "
+                f"{'' if t['bpm'] is None else f'{t["bpm"]:g}':>6} {t['key'] or '':<3} {t['codec']}"
+                for t in ts
+            )
+            or "(no tracks)"
+        ),
+    )
 ```
 
-- [ ] **Step 4: Run all tests to verify they pass**
+- [x] **Step 4: Run all tests to verify they pass**
 
 Run: `uv run pytest -v`
 Expected: PASS, including `test_playlist_cli` from Task 12.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/library/query.py unalphathet/cli.py tests/test_query.py
@@ -2931,7 +3135,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - `player.NullPlayer` — in-memory; records `calls: list[tuple]`
   - `player.MpvPlayer(extra_args: Sequence[str] = ())` — spawns `mpv --idle=yes --no-video --input-ipc-server=<tmp>/mpv.sock --really-quiet <extra_args>`; JSON IPC over a unix socket; raises `PlayerError` if mpv is missing.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_player.py`:
 ```python
@@ -2997,12 +3201,12 @@ def test_mpv_missing_binary(monkeypatch):
         MpvPlayer()
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_player.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.tui`)
 
-- [ ] **Step 3: Implement the players**
+- [x] **Step 3: Implement the players**
 
 `unalphathet/tui/__init__.py`: empty.
 
@@ -3093,9 +3297,18 @@ class MpvPlayer:
         self._dir = tempfile.mkdtemp(prefix="uat-mpv-")
         self._sock_path = os.path.join(self._dir, "mpv.sock")
         self._proc = subprocess.Popen(
-            [exe, "--idle=yes", "--no-video", "--no-terminal", "--really-quiet",
-             f"--input-ipc-server={self._sock_path}", *extra_args],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                exe,
+                "--idle=yes",
+                "--no-video",
+                "--no-terminal",
+                "--really-quiet",
+                f"--input-ipc-server={self._sock_path}",
+                *extra_args,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         deadline = time.time() + 5
@@ -3116,7 +3329,9 @@ class MpvPlayer:
     def _send(self, *command) -> dict:
         self._req += 1
         rid = self._req
-        self._sock.sendall(json.dumps({"command": list(command), "request_id": rid}).encode() + b"\n")
+        self._sock.sendall(
+            json.dumps({"command": list(command), "request_id": rid}).encode() + b"\n"
+        )
         while True:
             while b"\n" not in self._buf:
                 chunk = self._sock.recv(65536)
@@ -3192,12 +3407,12 @@ class MpvPlayer:
 
 Note the `loadfile` signature: mpv ≥ 0.38 takes `loadfile <url> [<flags> [<index> [<options>]]]`; older builds took `loadfile <url> [<flags> [<options>]]`. If `test_mpv_load_position_toggle_seek` errors with "invalid parameter", drop the `-1` argument. Check with `mpv --version`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_player.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add unalphathet/tui tests/test_player.py
@@ -3222,7 +3437,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
   - Keys: `space` play/pause (loads highlighted track at `config.preview_start_at` if nothing loaded), `left`/`right` ±10 s, `g` hop 25→50→75 %, `s` stop, `q` quit, `r` rescan (runs `scan.scan` in a worker thread, then reloads).
   - CLI: `uat tui [--no-audio]`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/test_browse.py`:
 ```python
@@ -3289,12 +3504,12 @@ async def test_space_loads_highlighted_track_then_toggles(conn, collection):
         assert player.current is None
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_browse.py -v`
 Expected: FAIL (`ModuleNotFoundError: unalphathet.tui.app`)
 
-- [ ] **Step 3: Implement the app and browse screen**
+- [x] **Step 3: Implement the app and browse screen**
 
 `unalphathet/tui/screens/__init__.py`: empty.
 
@@ -3389,8 +3604,12 @@ class BrowseScreen(Screen):
         self._highlighted = tracks[0].id if tracks else None
         for t in tracks:
             table.add_row(
-                t.artist or "?", t.title or "?",
-                "" if t.bpm is None else f"{t.bpm:g}", t.key or "", t.duration_str, t.codec,
+                t.artist or "?",
+                t.title or "?",
+                "" if t.bpm is None else f"{t.bpm:g}",
+                t.key or "",
+                t.duration_str,
+                t.codec,
                 key=t.id,
             )
 
@@ -3439,9 +3658,13 @@ class BrowseScreen(Screen):
             return
         pos, dur = player.position()
         icon = "⏸" if player.paused else "▶"
-        t = next((x for x in self._tracks.values() if self.app.root / x.rel_path == player.current), None)
+        t = next(
+            (x for x in self._tracks.values() if self.app.root / x.rel_path == player.current), None
+        )
         label = t.display if t else player.current.name
-        status.update(f"{icon} {label}   {int(pos) // 60}:{int(pos) % 60:02d} / {int(dur) // 60}:{int(dur) % 60:02d}")
+        status.update(
+            f"{icon} {label}   {int(pos) // 60}:{int(pos) % 60:02d} / {int(dur) // 60}:{int(dur) % 60:02d}"
+        )
 
     # --- rescan -------------------------------------------------------------------
     def action_rescan(self) -> None:
@@ -3487,7 +3710,9 @@ from unalphathet.tui.screens.browse import BrowseScreen
 class UatApp(App[None]):
     TITLE = "UnAlphaThet"
 
-    def __init__(self, conn: sqlite3.Connection, root: Path, config: Config, player: Player) -> None:
+    def __init__(
+        self, conn: sqlite3.Connection, root: Path, config: Config, player: Player
+    ) -> None:
         super().__init__()
         self.conn = conn
         self.root = root
@@ -3504,7 +3729,10 @@ class UatApp(App[None]):
 Add to `unalphathet/cli.py`:
 ```python
 @app.command()
-def tui(ctx: typer.Context, no_audio: bool = typer.Option(False, "--no-audio", help="Disable preview playback.")) -> None:
+def tui(
+    ctx: typer.Context,
+    no_audio: bool = typer.Option(False, "--no-audio", help="Disable preview playback."),
+) -> None:
     """Open the browse screen."""
     from unalphathet.tui.app import UatApp
     from unalphathet.tui.player import MpvPlayer, NullPlayer, PlayerError
@@ -3519,12 +3747,12 @@ def tui(ctx: typer.Context, no_audio: bool = typer.Option(False, "--no-audio", h
     UatApp(conn, root, config, player).run()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_browse.py -v`
 Expected: PASS. If `test_selecting_crate_fills_table` gets 0 rows: the Tree needs focus for `down`/`enter` — add `self.query_one("#nav", Tree).focus()` at the end of `on_mount`. If `tab` in the third test doesn't reach the table, replace it with `app.screen.query_one("#tracks", DataTable).focus()` in the test.
 
-- [ ] **Step 5: Try it for real**
+- [x] **Step 5: Try it for real**
 
 ```bash
 uv run uat --config /tmp/uat-dev.toml init --root /tmp/uat-coll
@@ -3538,7 +3766,7 @@ uv run uat --config /tmp/uat-dev.toml tui --no-audio     # inside the container:
 ```
 Navigate: `down`, `enter`, `tab`, `space`, `q`. In the container mpv has no output device; on the host (after the pipewire socket is mounted) drop `--no-audio`.
 
-- [ ] **Step 6: Lint, full test run, commit**
+- [x] **Step 6: Lint, full test run, commit**
 
 ```bash
 uv run ruff check . && uv run ruff format --check . || uv run ruff format .
