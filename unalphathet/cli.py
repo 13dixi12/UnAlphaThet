@@ -66,3 +66,23 @@ def init(
         {"config_path": str(state.config_path), "collection_root": str(root)},
         lambda d: f"config: {d['config_path']}\ncollection: {d['collection_root']}",
     )
+
+
+@app.command()
+def doctor(ctx: typer.Context) -> None:
+    """Check binaries, config, collection and database."""
+    from unalphathet import doctor as _doctor
+
+    state: CliState = ctx.obj
+    checks = _doctor.check_environment(state.config, state.config_path)
+
+    def human(cs: list[dict]) -> str:
+        lines = []
+        for c in cs:
+            mark = "ok  " if c["ok"] else ("ERR " if c["required"] else "warn")
+            lines.append(f"[{mark}] {c['name']:<11} {c['detail']}")
+        return "\n".join(lines)
+
+    emit(ctx, [c.__dict__ for c in checks], human)
+    if not _doctor.all_required_ok(checks):
+        raise typer.Exit(code=1)

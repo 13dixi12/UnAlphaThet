@@ -29,3 +29,11 @@ def test_init_json(tmp_path):
     import json
 
     assert json.loads(result.output)["collection_root"].endswith("/c")
+
+
+def test_doctor_runs(tmp_path):
+    result = runner.invoke(app, ["--config", str(tmp_path / "c.toml"), "--json", "doctor"])
+    import json
+
+    data = json.loads(result.output)
+    assert any(c["name"] == "ffmpeg" for c in data)
