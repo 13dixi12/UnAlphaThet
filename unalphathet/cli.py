@@ -305,3 +305,25 @@ def ls(ctx: typer.Context, where: str = typer.Argument(..., help="CRATE or CRATE
         [t.__dict__ for t in tracks],
         lambda ts: "\n".join(_track_line(t) for t in ts) or "(no tracks)",
     )
+
+
+# --- tui ------------------------------------------------------------------------------
+
+
+@app.command()
+def tui(
+    ctx: typer.Context,
+    no_audio: bool = typer.Option(False, "--no-audio", help="Disable preview playback."),
+) -> None:
+    """Open the browse screen."""
+    from unalphathet.tui.app import UatApp
+    from unalphathet.tui.player import MpvPlayer, NullPlayer, PlayerError
+
+    conn, root, config = open_ctx(ctx)
+    player = NullPlayer()
+    if not no_audio:
+        try:
+            player = MpvPlayer(extra_args=config.mpv_args)
+        except PlayerError as exc:
+            typer.echo(f"preview disabled: {exc}", err=True)
+    UatApp(conn, root, config, player).run()
