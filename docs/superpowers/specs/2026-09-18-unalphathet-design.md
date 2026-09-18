@@ -300,6 +300,10 @@ Search/sort by BPM/key/energy. Per-stick badge column (`A✓ B~ C·`), filters `
 9. **Phase 2 notes from Phase 1 review:** two *copies* of one file sharing a `UAT_ID` ping-pong as "moved"
    on every scan until dedupe resolves them; first scan is sequential `fpcalc` (~0.5 s/file, Ctrl-C safe and
    resumable because each file is its own transaction) — parallelise via the job table.
+   Real-file run (58 tracks, 2026-09-18): vibe **hotkeys** are DB-only and are lost with the DB — move them to
+   the config file (`vibes.psy = { "full-on" = "f" }`) as the old plan had it; `playlists/*.m3u8` survive a
+   DB loss but are not re-imported — scan should offer to import them when the playlist table is empty;
+   a rescan after DB loss re-fingerprints every file even though all carry a `UAT_ID` (27 s / 58 files).
 10. ✅ **Naming defaults** (override anytime): package `unalphathet`, CLI `uat`, config
    `~/.config/unalphathet/config.toml` (XDG), collection root from config (default `~/music/dj`), DB inside the
    collection at `.unalphathet/library.db` so the collection dir is self-contained and portable.
