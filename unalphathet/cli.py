@@ -271,3 +271,37 @@ def playlist_export(ctx: typer.Context, name: str) -> None:
     p = _playlist_or_die(conn, name)
     out = _playlists.export_m3u8(conn, root, p.id)
     emit(ctx, {"path": str(out)}, lambda d: d["path"])
+
+
+# --- tracks ---------------------------------------------------------------------------
+
+from unalphathet.library import query as _query  # noqa: E402
+
+
+def _track_line(t: dict) -> str:
+    bpm = "" if t["bpm"] is None else f"{t['bpm']:g}"
+    return (
+        f"{t['id'][:8]}  {(t['artist'] or '?')[:24]:<24} {(t['title'] or '?')[:40]:<40} "
+        f"{bpm:>6} {t['key'] or '':<3} {t['codec']}"
+    )
+
+
+@app.command("ls")
+def ls(ctx: typer.Context, where: str = typer.Argument(..., help="CRATE or CRATE/VIBE")) -> None:
+    """List tracks in a crate or a crate/vibe."""
+    conn, _, _ = open_ctx(ctx)
+    crate_name, _, vibe_name = where.partition("/")
+    c = _crate_or_die(conn, crate_name)
+    if vibe_name:
+        v = _vibes.get_vibe(conn, c.id, vibe_name)
+        if v is None:
+            typer.echo(f"no such vibe: {where}", err=True)
+            raise typer.Exit(code=1)
+        tracks = _query.tracks_with_vibe(conn, v.id)
+    else:
+        tracks = _query.tracks_in_crate(conn, c.id)
+    emit(
+        ctx,
+        [t.__dict__ for t in tracks],
+        lambda ts: "\n".join(_track_line(t) for t in ts) or "(no tracks)",
+    )
