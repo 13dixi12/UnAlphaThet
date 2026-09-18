@@ -121,12 +121,18 @@ def _state_for(conn: sqlite3.Connection, track_id: str, current: str) -> str:
     return "sorted" if vibes.track_vibes(conn, track_id) else "crated"
 
 
-def _write_back(conn, path: Path, track_id: str, t: TrackTags, config: Config) -> None:
-    """Write `t` (+ our id) into the file and remember when we did."""
+def _write_back(
+    conn, path: Path, track_id: str, t: TrackTags, config: Config, only: list[str]
+) -> None:
+    """Write our id plus exactly the fields in `only` into the file; remember when we did.
+
+    Never more than that: a file can hold things our model can't represent (repeated GENRE
+    entries, a 4-decimal BPM), and rewriting a field we didn't change would flatten them.
+    """
     if not config.write_back_tags:
         return
     t.uat_id = track_id
-    write_tags(path, t)
+    write_tags(path, t, only=("uat_id", *only))
     _update_row(conn, track_id, {"tags_written_at": _mtime_iso(path)})
 
 
@@ -183,7 +189,8 @@ def _reconcile_existing(
         )
         report.tag_won += 1
     else:
-        _write_back(conn, path, row["id"], db_tags, config)
+        changed = [k for k in COMPARED if db_values[k] != tag_values[k]]
+        _write_back(conn, path, row["id"], db_tags, config, only=changed)
         report.db_won += 1
     report.updated += 1
 
@@ -228,8 +235,8 @@ def _insert_new(
     _update_row(conn, track_id, {"state": _state_for(conn, track_id, "crated")})
     if file_tags.uat_id == track_id:  # already stamped: in sync as of now, nothing to write
         _update_row(conn, track_id, {"tags_written_at": _mtime_iso(path)})
-    else:
-        _write_back(conn, path, track_id, file_tags, config)
+    else:  # import == the file is the truth; add our id and nothing else
+        _stamp_id(conn, path, track_id, config)
     conn.execute(
         "INSERT INTO sort_log(track_id, action, to_path) VALUES (?, 'added', ?)",
         (track_id, values["rel_path"]),

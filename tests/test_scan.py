@@ -226,3 +226,39 @@ def test_stripped_id_at_same_path_is_restamped(conn, collection):
     assert report.errors == [] and report.moved == 0 and report.added == 0
     assert _tracks(conn)[str(p.relative_to(collection))]["id"] == before
     assert read_tags(p).uat_id == before
+
+
+def test_first_scan_only_adds_the_id(conn, collection):
+    """Real-file finding: multi-valued GENRE and a 4-decimal BPM must survive import untouched."""
+    import mutagen
+
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    f = mutagen.File(p)
+    f["GENRE"] = ["Electronic", "Psytrance", "Progressive Psytrance"]
+    f["BPM"] = "94.3468"
+    f.save()
+    scan.scan(conn, collection, _cfg(collection))
+    f = mutagen.File(p)
+    assert list(f["GENRE"]) == ["Electronic", "Psytrance", "Progressive Psytrance"]
+    assert list(f["BPM"]) == ["94.3468"]
+    assert len(f["UAT_ID"]) == 1
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    assert row["genre"] == "Electronic" and row["bpm"] == 94.3468
+
+
+def test_db_win_writes_only_changed_fields(conn, collection):
+    import mutagen
+
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    f = mutagen.File(p)
+    f["GENRE"] = ["Electronic", "Psytrance"]
+    f.save()
+    scan.scan(conn, collection, _cfg(collection))
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    conn.execute("UPDATE track SET title = 'DB Title' WHERE id = ?", (row["id"],))
+    past = time.time() - 3600
+    os.utime(p, (past, past))
+    assert scan.scan(conn, collection, _cfg(collection)).db_won == 1
+    f = mutagen.File(p)
+    assert list(f["TITLE"]) == ["DB Title"]
+    assert list(f["GENRE"]) == ["Electronic", "Psytrance"]  # untouched: it didn't differ

@@ -53,7 +53,10 @@ class BrowseScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#tracks", DataTable)
-        table.add_columns("Artist", "Title", "BPM", "Key", "Len", "Fmt")
+        # fixed widths: DataTable otherwise sizes to content and pushes Key/Len/Fmt off-screen
+        table.add_column("Artist", width=22)
+        table.add_column("Title", width=36)
+        table.add_columns("BPM", "Key", "Len", "Fmt")
         self.reload_tree()
         self.query_one("#nav", Tree).focus()
         self.set_interval(0.5, self.refresh_status)
