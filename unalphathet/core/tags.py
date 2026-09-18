@@ -139,3 +139,65 @@ def read_tags(path: Path) -> TrackTags:
     t.bpm = _to_float(t.bpm)
     t.energy = _to_int(t.energy)
     return t
+
+
+def _fmt(field: str, value) -> str:
+    if field == "bpm":
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def write_tags(path: Path, t: TrackTags, only=None) -> None:
+    """Write the WRITABLE fields (or the `only` subset). None removes the tag."""
+    f = mutagen.File(path)
+    if f is None:
+        raise ValueError(f"unsupported audio file: {path}")
+    if f.tags is None:
+        f.add_tags()
+    tags = f.tags
+    fields_to_write = tuple(only) if only is not None else WRITABLE
+
+    if isinstance(tags, VCommentDict):
+        for field in fields_to_write:
+            k, v = VORBIS_KEYS[field], getattr(t, field)
+            if v is None:
+                if k in tags:
+                    del tags[k]
+            else:
+                tags[k] = _fmt(field, v)
+    elif isinstance(tags, ID3):
+        for field in fields_to_write:
+            v = getattr(t, field)
+            if field in ID3_TXXX:
+                desc = ID3_TXXX[field]
+                tags.delall(f"TXXX:{desc}")
+                if v is not None:
+                    tags.add(TXXX(encoding=3, desc=desc, text=[_fmt(field, v)]))
+            else:
+                frame = ID3_FRAMES[field]
+                tags.delall(frame.__name__)
+                if v is not None:
+                    tags.add(frame(encoding=3, text=[_fmt(field, v)]))
+    elif isinstance(f, MP4):
+        for field in fields_to_write:
+            v = getattr(t, field)
+            if field == "bpm":
+                if v is None:
+                    tags.pop("tmpo", None)
+                else:
+                    tags["tmpo"] = [round(v)]
+            elif field in MP4_FREEFORM:
+                k = MP4_FREEFORM[field]
+                if v is None:
+                    tags.pop(k, None)
+                else:
+                    tags[k] = [MP4FreeForm(_fmt(field, v).encode("utf-8"))]
+            else:
+                k = MP4_KEYS[field]
+                if v is None:
+                    tags.pop(k, None)
+                else:
+                    tags[k] = [_fmt(field, v)]
+    else:
+        raise ValueError(f"don't know how to write tags for {path}")
+    f.save()
