@@ -33,9 +33,7 @@ def get_vibe(conn: sqlite3.Connection, crate_id: int, name: str) -> Vibe | None:
     return row_to_vibe(row) if row else None
 
 
-def add_vibe(
-    conn: sqlite3.Connection, crate_id: int, name: str, hotkey: str | None = None
-) -> Vibe:
+def add_vibe(conn: sqlite3.Connection, crate_id: int, name: str, hotkey: str | None = None) -> Vibe:
     if get_vibe(conn, crate_id, name):
         raise VibeExists(name)
     conn.execute(
@@ -53,9 +51,7 @@ def track_vibes(conn: sqlite3.Connection, track_id: str) -> list[Vibe]:
     return [row_to_vibe(r) for r in rows]
 
 
-def set_track_vibes(
-    conn: sqlite3.Connection, track_id: str, vibe_ids: Iterable[int]
-) -> list[Vibe]:
+def set_track_vibes(conn: sqlite3.Connection, track_id: str, vibe_ids: Iterable[int]) -> list[Vibe]:
     """Replace the track's vibes with `vibe_ids`.
 
     Policy (Dixi, 2026-09-18): strict. Every offered vibe must belong to the track's own crate;
@@ -112,7 +108,7 @@ def format_grouping(conn: sqlite3.Connection, track_id: str) -> str | None:
 
 
 def apply_grouping(conn: sqlite3.Connection, track_id: str, grouping: str | None) -> int:
-    """Set a track's vibes from a GROUPING string. Foreign-crate entries are ignored; returns how many."""
+    """Set vibes from a GROUPING string. Foreign-crate entries are ignored; returns how many."""
     row = conn.execute(
         "SELECT t.crate_id, c.dir_name FROM track t JOIN crate c ON c.id = t.crate_id "
         "WHERE t.id = ?",

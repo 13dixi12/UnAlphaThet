@@ -44,3 +44,13 @@ def test_fingerprint_error(tmp_path):
 def test_audio_md5_flac_only(tmp_path, ffmpeg):
     assert len(ids.audio_md5(make_audio(tmp_path / "a.flac"))) == 32
     assert ids.audio_md5(make_audio(tmp_path / "a.mp3")) is None
+
+
+def test_is_track_id():
+    assert ids.is_track_id(ids.new_track_id())
+    assert not ids.is_track_id(None)
+    assert not ids.is_track_id("")
+    assert not ids.is_track_id("not-a-uuid")
+    assert not ids.is_track_id(
+        "0f0e0d0c0b0a49088706050403020100"
+    )  # hex without dashes: not our format

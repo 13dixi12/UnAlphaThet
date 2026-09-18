@@ -168,7 +168,11 @@ def vibe_ls(ctx: typer.Context, crate: str) -> None:
     conn, _, _ = open_ctx(ctx)
     c = _crate_or_die(conn, crate)
     rows = [v.__dict__ for v in _vibes.list_vibes(conn, c.id)]
-    emit(ctx, rows, lambda vs: "\n".join(f"{v['hotkey'] or ' '} {v['name']}" for v in vs) or "(no vibes)")
+    emit(
+        ctx,
+        rows,
+        lambda vs: "\n".join(f"{v['hotkey'] or ' '} {v['name']}" for v in vs) or "(no vibes)",
+    )
 
 
 @vibe_app.command("add")

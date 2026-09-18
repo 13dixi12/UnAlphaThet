@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from unalphathet.config import Config
-from unalphathet.core import scan
+from unalphathet.core import fs, scan
 from unalphathet.core.tags import read_tags, write_tags
 from unalphathet.library import vibes
 
@@ -38,7 +38,11 @@ def test_rescan_is_noop(conn, collection):
     scan.scan(conn, collection, _cfg(collection))
     report = scan.scan(conn, collection, _cfg(collection))
     assert (report.added, report.moved, report.missing, report.tag_won, report.db_won) == (
-        0, 0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
+        0,
     )
 
 
@@ -121,11 +125,21 @@ TAGS = {"title": "b"}
 
 
 def test_conflict_newer_file_tags_win():
-    assert scan.resolve_conflict("2026-01-01T00:00:00.000000Z", "2026-01-02T00:00:00.000000Z", DB, TAGS) is scan.Source.TAGS
+    assert (
+        scan.resolve_conflict(
+            "2026-01-01T00:00:00.000000Z", "2026-01-02T00:00:00.000000Z", DB, TAGS
+        )
+        is scan.Source.TAGS
+    )
 
 
 def test_conflict_older_file_db_wins():
-    assert scan.resolve_conflict("2026-01-02T00:00:00.000000Z", "2026-01-01T00:00:00.000000Z", DB, TAGS) is scan.Source.DB
+    assert (
+        scan.resolve_conflict(
+            "2026-01-02T00:00:00.000000Z", "2026-01-01T00:00:00.000000Z", DB, TAGS
+        )
+        is scan.Source.DB
+    )
 
 
 def test_conflict_never_written_db_wins():
@@ -138,4 +152,57 @@ def test_conflict_equal_timestamps_db_wins():
 
 
 def test_conflict_future_file_still_counts_as_newer():
-    assert scan.resolve_conflict("2026-01-01T00:00:00.000000Z", "2099-01-01T00:00:00.000000Z", DB, TAGS) is scan.Source.TAGS
+    assert (
+        scan.resolve_conflict(
+            "2026-01-01T00:00:00.000000Z", "2099-01-01T00:00:00.000000Z", DB, TAGS
+        )
+        is scan.Source.TAGS
+    )
+
+
+# --- advisor-review cases -----------------------------------------------------------
+
+
+def test_cross_crate_move_drops_old_vibes(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    p = collection / "psy/Astrix - Deep Jungle Walk.flac"
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    vibes.apply_grouping(conn, row["id"], "psy/night")
+    scan.scan(conn, collection, _cfg(collection))  # writes grouping into the file
+    assert read_tags(p).grouping == "psy/night"
+    p.rename(collection / "techno" / p.name)
+    report = scan.scan(conn, collection, _cfg(collection))
+    assert report.moved == 1
+    moved = _tracks(conn)["techno/Astrix - Deep Jungle Walk.flac"]
+    assert vibes.track_vibes(conn, moved["id"]) == []
+    assert moved["state"] == "crated"
+    assert read_tags(collection / "techno" / p.name).grouping is None  # stale tag stripped
+
+
+def test_lost_db_keeps_ids_and_files(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    before = {k: v["id"] for k, v in _tracks(conn).items()}
+    audio = [p for _, p in fs.iter_crate_files(collection)]
+    mtimes = {p: p.stat().st_mtime for p in audio}
+    conn.close()
+    for f in (collection / ".unalphathet").glob("library.db*"):
+        f.unlink()
+    from unalphathet.core import db
+
+    fresh = db.open_library(collection)
+    report = scan.scan(fresh, collection, _cfg(collection))
+    assert report.added == 3
+    assert {k: v["id"] for k, v in _tracks(fresh).items()} == before
+    assert mtimes == {p: p.stat().st_mtime for p in audio}  # nothing rewritten
+
+
+def test_lossy_bpm_does_not_rewrite_forever(conn, collection):
+    scan.scan(conn, collection, _cfg(collection))
+    p = collection / "techno/Surgeon - Floorshow.m4a"
+    row = _tracks(conn)[str(p.relative_to(collection))]
+    conn.execute("UPDATE track SET bpm = 142.5 WHERE id = ?", (row["id"],))
+    assert scan.scan(conn, collection, _cfg(collection)).db_won == 1  # written as tmpo=142
+    mtime = p.stat().st_mtime
+    assert scan.scan(conn, collection, _cfg(collection)).db_won == 0  # converged
+    assert p.stat().st_mtime == mtime
+    assert _tracks(conn)[str(p.relative_to(collection))]["bpm"] == 142.5  # DB keeps precision

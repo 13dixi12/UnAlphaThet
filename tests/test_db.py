@@ -14,7 +14,15 @@ def test_migrate_creates_schema(tmp_path):
     conn = db.connect(tmp_path / "lib.db")
     version = db.migrate(conn)
     assert version == 1
-    assert {"track", "crate", "vibe", "track_vibe", "playlist", "playlist_track", "sort_log"} <= _tables(conn)
+    assert {
+        "track",
+        "crate",
+        "vibe",
+        "track_vibe",
+        "playlist",
+        "playlist_track",
+        "sort_log",
+    } <= _tables(conn)
 
 
 def test_migrate_is_idempotent(tmp_path):

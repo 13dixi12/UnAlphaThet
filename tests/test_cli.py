@@ -24,7 +24,9 @@ def test_init_creates_config_and_collection(tmp_path):
 
 def test_init_json(tmp_path):
     cfg = tmp_path / "config.toml"
-    result = runner.invoke(app, ["--config", str(cfg), "--json", "init", "--root", str(tmp_path / "c")])
+    result = runner.invoke(
+        app, ["--config", str(cfg), "--json", "init", "--root", str(tmp_path / "c")]
+    )
     assert result.exit_code == 0
     import json
 
@@ -49,7 +51,9 @@ def test_crate_add_and_ls(tmp_path):
     root = tmp_path / "coll"
     root.mkdir()
     cfg = _cfg(tmp_path, root)
-    r = runner.invoke(app, ["--config", cfg, "crate", "add", "Psy", "--hotkey", "1", "--bpm", "135-150"])
+    r = runner.invoke(
+        app, ["--config", cfg, "crate", "add", "Psy", "--hotkey", "1", "--bpm", "135-150"]
+    )
     assert r.exit_code == 0, r.output
     result = runner.invoke(app, ["--config", cfg, "--json", "crate", "ls"])
     import json

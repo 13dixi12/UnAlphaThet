@@ -49,29 +49,60 @@ def resolve_conflict(
 
     Policy (Dixi, 2026-09-18): the file wins only if it was modified strictly *after* our last
     tag write. Never written by us (write_back=false, imported row), equal timestamps, or an
-    older file -> the DB wins and its values are written back. A file mtime in the future is
-    simply "newer" -> file wins. Timestamps are same-shape ISO-8601 UTC, so they compare lexically.
+    older file -> the DB wins and its values are written back (with write_back=false nothing is
+    written, so external edits are ignored on every scan and counted as db_won each time). A file
+    mtime in the future is simply "newer" -> file wins. Timestamps are same-shape ISO-8601 UTC,
+    so they compare lexically.
     """
     if tags_written_at is None:
         return Source.DB
     return Source.TAGS if file_mtime_iso > tags_written_at else Source.DB
 
 
+def _comparable(t: TrackTags, codec: str) -> dict:
+    """The COMPARED fields as the *file* can represent them, so lossy formats converge.
+
+    MP4 stores BPM as an integer (`tmpo`); everything else gets two decimals (see tags._fmt).
+    Without this a DB bpm of 142.5 on an .m4a would be rewritten on every scan, forever.
+    """
+    values = {k: getattr(t, k) for k in COMPARED}
+    if values["bpm"] is not None:
+        values["bpm"] = (
+            round(values["bpm"]) if codec in ("aac", "alac") else round(values["bpm"], 2)
+        )
+    return values
+
+
 def _tags_to_row(t: TrackTags) -> dict:
     return {
-        "title": t.title, "artist": t.artist, "album": t.album, "albumartist": t.albumartist,
-        "genre": t.genre, "bpm": t.bpm, "key": t.key, "energy": t.energy,
-        "duration_ms": t.duration_ms, "codec": t.codec, "sample_rate": t.sample_rate,
-        "bit_depth": t.bit_depth, "bitrate": t.bitrate,
+        "title": t.title,
+        "artist": t.artist,
+        "album": t.album,
+        "albumartist": t.albumartist,
+        "genre": t.genre,
+        "bpm": t.bpm,
+        "key": t.key,
+        "energy": t.energy,
+        "duration_ms": t.duration_ms,
+        "codec": t.codec,
+        "sample_rate": t.sample_rate,
+        "bit_depth": t.bit_depth,
+        "bitrate": t.bitrate,
     }
 
 
 def _row_tags(conn: sqlite3.Connection, row: sqlite3.Row) -> TrackTags:
     return TrackTags(
-        uat_id=row["id"], title=row["title"], artist=row["artist"], album=row["album"],
-        albumartist=row["albumartist"], genre=row["genre"],
+        uat_id=row["id"],
+        title=row["title"],
+        artist=row["artist"],
+        album=row["album"],
+        albumartist=row["albumartist"],
+        genre=row["genre"],
         grouping=vibes.format_grouping(conn, row["id"]),
-        bpm=row["bpm"], key=row["key"], energy=row["energy"],
+        bpm=row["bpm"],
+        key=row["key"],
+        energy=row["energy"],
     )
 
 
@@ -107,14 +138,26 @@ def _stamp_id(conn, path: Path, track_id: str, config: Config) -> None:
     _update_row(conn, track_id, {"tags_written_at": _mtime_iso(path)})
 
 
-def _reconcile_existing(conn, root: Path, path: Path, row: sqlite3.Row, file_tags: TrackTags,
-                        crate_id: int, config: Config, report: ScanReport) -> None:
+def _reconcile_existing(
+    conn,
+    root: Path,
+    path: Path,
+    row: sqlite3.Row,
+    file_tags: TrackTags,
+    crate_id: int,
+    config: Config,
+    report: ScanReport,
+) -> None:
     rel = fs.rel_posix(root, path)
     if row["rel_path"] != rel or row["crate_id"] != crate_id:
+        recrated = row["crate_id"] != crate_id
         _update_row(conn, row["id"], {"rel_path": rel, "crate_id": crate_id})
+        if recrated:  # vibes are crate-scoped: a track that changes crate starts with none
+            conn.execute("DELETE FROM track_vibe WHERE track_id = ?", (row["id"],))
+            _update_row(conn, row["id"], {"state": _state_for(conn, row["id"], "crated")})
         conn.execute(
-            "INSERT INTO sort_log(track_id, action, from_path, to_path) VALUES (?, 'moved', ?, ?)",
-            (row["id"], row["rel_path"], rel),
+            "INSERT INTO sort_log(track_id, action, from_path, to_path) VALUES (?, ?, ?, ?)",
+            (row["id"], "recrated" if recrated else "moved", row["rel_path"], rel),
         )
         report.moved += 1
     if row["state"] == "missing":
@@ -122,18 +165,22 @@ def _reconcile_existing(conn, root: Path, path: Path, row: sqlite3.Row, file_tag
     row = _fetch(conn, row["id"])
 
     db_tags = _row_tags(conn, row)
-    db_values = {k: getattr(db_tags, k) for k in COMPARED}
-    tag_values = {k: getattr(file_tags, k) for k in COMPARED}
+    db_values = _comparable(db_tags, file_tags.codec)
+    tag_values = _comparable(file_tags, file_tags.codec)
     if db_values == tag_values:
         return
     winner = resolve_conflict(row["tags_written_at"], _mtime_iso(path), db_values, tag_values)
     if winner is Source.TAGS:
         _update_row(conn, row["id"], _tags_to_row(file_tags))
         vibes.apply_grouping(conn, row["id"], file_tags.grouping)
-        _update_row(conn, row["id"], {
-            "state": _state_for(conn, row["id"], row["state"]),
-            "tags_written_at": _mtime_iso(path),
-        })
+        _update_row(
+            conn,
+            row["id"],
+            {
+                "state": _state_for(conn, row["id"], row["state"]),
+                "tags_written_at": _mtime_iso(path),
+            },
+        )
         report.tag_won += 1
     else:
         _write_back(conn, path, row["id"], db_tags, config)
@@ -149,21 +196,40 @@ def _find_by_fingerprint(conn, root: Path, fp: str) -> sqlite3.Row | None:
     return None
 
 
-def _insert_new(conn, root: Path, path: Path, file_tags: TrackTags, crate_id: int,
-                fp: str | None, config: Config, report: ScanReport) -> str:
-    track_id = ids.new_track_id()
+def _insert_new(
+    conn,
+    root: Path,
+    path: Path,
+    file_tags: TrackTags,
+    crate_id: int,
+    fp: str | None,
+    config: Config,
+    report: ScanReport,
+) -> str:
+    # A file that already carries a UAT_ID unknown to this DB (lost library.db, foreign stick)
+    # keeps it: re-minting would orphan every manifest and playlist that points at it.
+    track_id = file_tags.uat_id if ids.is_track_id(file_tags.uat_id) else ids.new_track_id()
     values = _tags_to_row(file_tags)
-    values.update({
-        "id": track_id, "rel_path": fs.rel_posix(root, path), "crate_id": crate_id,
-        "fingerprint": fp, "audio_hash": file_tags.audio_md5,
-        "size_bytes": path.stat().st_size, "state": "crated",
-    })
+    values.update(
+        {
+            "id": track_id,
+            "rel_path": fs.rel_posix(root, path),
+            "crate_id": crate_id,
+            "fingerprint": fp,
+            "audio_hash": file_tags.audio_md5,
+            "size_bytes": path.stat().st_size,
+            "state": "crated",
+        }
+    )
     cols = ", ".join(values)
     marks = ", ".join("?" * len(values))
     conn.execute(f"INSERT INTO track({cols}) VALUES ({marks})", tuple(values.values()))
     vibes.apply_grouping(conn, track_id, file_tags.grouping)
     _update_row(conn, track_id, {"state": _state_for(conn, track_id, "crated")})
-    _write_back(conn, path, track_id, file_tags, config)
+    if file_tags.uat_id == track_id:  # already stamped: in sync as of now, nothing to write
+        _update_row(conn, track_id, {"tags_written_at": _mtime_iso(path)})
+    else:
+        _write_back(conn, path, track_id, file_tags, config)
     conn.execute(
         "INSERT INTO sort_log(track_id, action, to_path) VALUES (?, 'added', ?)",
         (track_id, values["rel_path"]),
@@ -172,8 +238,9 @@ def _insert_new(conn, root: Path, path: Path, file_tags: TrackTags, crate_id: in
     return track_id
 
 
-def _scan_one(conn, root: Path, path: Path, crate_dir: str, config: Config,
-              report: ScanReport) -> str:
+def _scan_one(
+    conn, root: Path, path: Path, crate_dir: str, config: Config, report: ScanReport
+) -> str:
     """Reconcile one file; returns the track id it now belongs to."""
     crate = crates.ensure_crate(conn, root, crate_dir)
     file_tags = read_tags(path)
@@ -195,8 +262,12 @@ def _scan_one(conn, root: Path, path: Path, crate_dir: str, config: Config,
     return _insert_new(conn, root, path, file_tags, crate.id, fp, config, report)
 
 
-def scan(conn: sqlite3.Connection, root: Path, config: Config,
-         progress: Callable[[str], None] | None = None) -> ScanReport:
+def scan(
+    conn: sqlite3.Connection,
+    root: Path,
+    config: Config,
+    progress: Callable[[str], None] | None = None,
+) -> ScanReport:
     report = ScanReport()
     seen: set[str] = set()
     for crate_dir, path in fs.iter_crate_files(root):

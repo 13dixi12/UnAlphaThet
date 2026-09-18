@@ -37,23 +37,49 @@ class TrackTags:
 
 
 WRITABLE = (
-    "uat_id", "title", "artist", "album", "albumartist", "genre", "grouping", "bpm", "key", "energy",
+    "uat_id",
+    "title",
+    "artist",
+    "album",
+    "albumartist",
+    "genre",
+    "grouping",
+    "bpm",
+    "key",
+    "energy",
 )
 
 # field -> tag key per family
 VORBIS_KEYS = {
-    "uat_id": "UAT_ID", "title": "TITLE", "artist": "ARTIST", "album": "ALBUM",
-    "albumartist": "ALBUMARTIST", "genre": "GENRE", "grouping": "GROUPING",
-    "bpm": "BPM", "key": "INITIALKEY", "energy": "UAT_ENERGY",
+    "uat_id": "UAT_ID",
+    "title": "TITLE",
+    "artist": "ARTIST",
+    "album": "ALBUM",
+    "albumartist": "ALBUMARTIST",
+    "genre": "GENRE",
+    "grouping": "GROUPING",
+    "bpm": "BPM",
+    "key": "INITIALKEY",
+    "energy": "UAT_ENERGY",
 }
 ID3_FRAMES = {  # field -> frame class (TXXX handled separately)
-    "title": TIT2, "artist": TPE1, "album": TALB, "albumartist": TPE2,
-    "genre": TCON, "grouping": TIT1, "bpm": TBPM, "key": TKEY,
+    "title": TIT2,
+    "artist": TPE1,
+    "album": TALB,
+    "albumartist": TPE2,
+    "genre": TCON,
+    "grouping": TIT1,
+    "bpm": TBPM,
+    "key": TKEY,
 }
 ID3_TXXX = {"uat_id": "UAT_ID", "energy": "UAT_ENERGY"}
 MP4_KEYS = {
-    "title": "\xa9nam", "artist": "\xa9ART", "album": "\xa9alb", "albumartist": "aART",
-    "genre": "\xa9gen", "grouping": "\xa9grp",
+    "title": "\xa9nam",
+    "artist": "\xa9ART",
+    "album": "\xa9alb",
+    "albumartist": "aART",
+    "genre": "\xa9gen",
+    "grouping": "\xa9grp",
 }
 MP4_FREEFORM = {
     "uat_id": "----:com.apple.iTunes:UAT_ID",

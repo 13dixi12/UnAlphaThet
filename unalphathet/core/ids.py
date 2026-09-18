@@ -17,6 +17,16 @@ def new_track_id() -> str:
     return str(uuid.uuid4())
 
 
+def is_track_id(value: str | None) -> bool:
+    """True for a well-formed UUID string (what UAT_ID must hold)."""
+    if not value:
+        return False
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
+
+
 def fingerprint(path: Path, max_seconds: int = 120) -> tuple[float, str]:
     """Chromaprint via fpcalc. Returns (duration_seconds, compressed_fingerprint)."""
     try:

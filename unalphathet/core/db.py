@@ -32,7 +32,7 @@ CREATE TABLE vibe (
 CREATE TABLE track (
     id               TEXT PRIMARY KEY,              -- UUID4, also written into the file as UAT_ID
     fingerprint      TEXT,                          -- chromaprint (compressed, base64)
-    audio_hash       TEXT,                          -- md5 of decoded PCM (FLAC STREAMINFO) when known
+    audio_hash       TEXT,                          -- md5 of decoded PCM (FLAC STREAMINFO)
     rel_path         TEXT NOT NULL UNIQUE,          -- relative to collection root, POSIX separators
     crate_id         INTEGER REFERENCES crate(id),
     title            TEXT,

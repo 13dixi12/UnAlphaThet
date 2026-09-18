@@ -20,5 +20,12 @@ def test_all_good(monkeypatch, tmp_path):
     checks = doctor.check_environment(Config(collection_root=root), cfg_path)
     assert doctor.all_required_ok(checks)
     assert {c.name for c in checks} >= {
-        "python", "ffmpeg", "ffprobe", "fpcalc", "mpv", "config", "collection", "database",
+        "python",
+        "ffmpeg",
+        "ffprobe",
+        "fpcalc",
+        "mpv",
+        "config",
+        "collection",
+        "database",
     }

@@ -56,7 +56,9 @@ def test_safe_filename_has_no_fat_forbidden_chars():
 
 
 def test_safe_filename_shape():
-    assert fs.safe_filename("Astrix", "Deep Jungle Walk", ".flac") == "Astrix - Deep Jungle Walk.flac"
+    assert (
+        fs.safe_filename("Astrix", "Deep Jungle Walk", ".flac") == "Astrix - Deep Jungle Walk.flac"
+    )
     assert fs.safe_filename(None, "Untitled", ".mp3") == "Untitled.mp3"
     assert fs.safe_filename("", "Untitled", ".mp3") == "Untitled.mp3"
 
@@ -73,10 +75,14 @@ def test_safe_filename_never_empty_stem():
 
 # --- safe_filename: Dixi's policy (2026-09-18): replace forbidden with '_', ASCII only ---
 
+
 def test_safe_filename_policy_replacement_and_ascii():
     assert fs.safe_filename("AC/DC", "Ünïcode?", ".flac") == "AC_DC - Unicode_.flac"
     assert fs.safe_filename("Røyksopp", "Straße", ".mp3") == "Royksopp - Strasse.mp3"
-    assert fs.safe_filename("Astrix", "Deep   Jungle\tWalk", ".flac") == "Astrix - Deep Jungle Walk.flac"
+    assert (
+        fs.safe_filename("Astrix", "Deep   Jungle\tWalk", ".flac")
+        == "Astrix - Deep Jungle Walk.flac"
+    )
 
 
 def test_safe_filename_policy_truncates_title_first():

@@ -22,8 +22,15 @@ ENCODERS = {
 def make_audio(path: Path, *, seconds: float = 3, seed: int = 1, **meta: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", f"anoisesrc=d={seconds}:c=pink:r=44100:a=0.5:s={seed}",
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"anoisesrc=d={seconds}:c=pink:r=44100:a=0.5:s={seed}",
     ]
     for k, v in meta.items():
         cmd += ["-metadata", f"{k}={v}"]
@@ -46,12 +53,23 @@ def collection(tmp_path: Path, ffmpeg: str) -> Path:
     root = tmp_path / "coll"
     for sub in ("inbox", "playlists", ".unalphathet"):
         (root / sub).mkdir(parents=True)
-    make_audio(root / "psy" / "Astrix - Deep Jungle Walk.flac", seed=11,
-               title="Deep Jungle Walk", artist="Astrix", album="Deep Jungle Walk")
-    make_audio(root / "psy" / "albums" / "Astrix - Heart.mp3", seed=12,
-               title="Heart", artist="Astrix", album="He.art")
-    make_audio(root / "techno" / "Surgeon - Floorshow.m4a", seed=13,
-               title="Floorshow", artist="Surgeon")
+    make_audio(
+        root / "psy" / "Astrix - Deep Jungle Walk.flac",
+        seed=11,
+        title="Deep Jungle Walk",
+        artist="Astrix",
+        album="Deep Jungle Walk",
+    )
+    make_audio(
+        root / "psy" / "albums" / "Astrix - Heart.mp3",
+        seed=12,
+        title="Heart",
+        artist="Astrix",
+        album="He.art",
+    )
+    make_audio(
+        root / "techno" / "Surgeon - Floorshow.m4a", seed=13, title="Floorshow", artist="Surgeon"
+    )
     make_audio(root / "inbox" / "unsorted.flac", seed=14, title="Unsorted", artist="Nobody")
     return root
 

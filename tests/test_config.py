@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from unalphathet.config import Config, default_config_path, load_config, write_default_config
+from unalphathet.config import default_config_path, load_config, write_default_config
 
 
 def test_defaults_when_file_missing(tmp_path):
