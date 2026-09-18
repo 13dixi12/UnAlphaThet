@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,8 @@ import typer
 
 from unalphathet import __version__
 from unalphathet.config import Config, default_config_path, load_config, write_default_config
+from unalphathet.core import db
+from unalphathet.library import crates as _crates
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 
@@ -47,6 +50,16 @@ def emit(ctx: typer.Context, data: Any, human: Callable[[Any], str]) -> None:
     """Print `data` as JSON if --json, else via `human`."""
     state: CliState = ctx.obj
     typer.echo(json.dumps(data, default=str) if state.json else human(data))
+
+
+def open_ctx(ctx: typer.Context) -> tuple[sqlite3.Connection, Path, Config]:
+    """Open (and migrate) the library for the configured collection root."""
+    state: CliState = ctx.obj
+    root = state.config.collection_root
+    if not root.is_dir():
+        typer.echo(f"collection root {root} does not exist — run `uat init`", err=True)
+        raise typer.Exit(code=1)
+    return db.open_library(root), root, state.config
 
 
 @app.command()
@@ -86,3 +99,48 @@ def doctor(ctx: typer.Context) -> None:
     emit(ctx, [c.__dict__ for c in checks], human)
     if not _doctor.all_required_ok(checks):
         raise typer.Exit(code=1)
+
+
+# --- crates ---------------------------------------------------------------------------
+
+
+def _parse_bpm_range(spec: str | None) -> tuple[float | None, float | None]:
+    if not spec:
+        return None, None
+    lo, _, hi = spec.partition("-")
+    return float(lo), float(hi or lo)
+
+
+crate_app = typer.Typer(help="Crates (directories).")
+app.add_typer(crate_app, name="crate")
+
+
+def _crate_line(c: dict) -> str:
+    bpm = "" if c["bpm_min"] is None else f"{c['bpm_min']:g}-{c['bpm_max']:g} bpm"
+    return f"{c['hotkey'] or ' '} {c['name']:<20} {c['dir_name']:<20} {bpm}"
+
+
+@crate_app.command("ls")
+def crate_ls(ctx: typer.Context) -> None:
+    """List crates."""
+    conn, _, _ = open_ctx(ctx)
+    rows = [c.__dict__ for c in _crates.list_crates(conn)]
+    emit(ctx, rows, lambda cs: "\n".join(_crate_line(c) for c in cs) or "(no crates)")
+
+
+@crate_app.command("add")
+def crate_add(
+    ctx: typer.Context,
+    name: str,
+    hotkey: str | None = typer.Option(None, "--hotkey"),
+    bpm: str | None = typer.Option(None, "--bpm", help="Range like 135-150."),
+) -> None:
+    """Create a crate directory and register it."""
+    conn, root, _ = open_ctx(ctx)
+    lo, hi = _parse_bpm_range(bpm)
+    try:
+        c = _crates.add_crate(conn, root, name, hotkey=hotkey, bpm_min=lo, bpm_max=hi)
+    except _crates.CrateExists as exc:
+        typer.echo(f"crate already exists: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    emit(ctx, c.__dict__, lambda d: f"created crate {d['name']} -> {root / d['dir_name']}")

@@ -37,3 +37,22 @@ def test_doctor_runs(tmp_path):
 
     data = json.loads(result.output)
     assert any(c["name"] == "ffmpeg" for c in data)
+
+
+def _cfg(tmp_path, root):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'[collection]\nroot = "{root}"\n')
+    return str(cfg)
+
+
+def test_crate_add_and_ls(tmp_path):
+    root = tmp_path / "coll"
+    root.mkdir()
+    cfg = _cfg(tmp_path, root)
+    r = runner.invoke(app, ["--config", cfg, "crate", "add", "Psy", "--hotkey", "1", "--bpm", "135-150"])
+    assert r.exit_code == 0, r.output
+    result = runner.invoke(app, ["--config", cfg, "--json", "crate", "ls"])
+    import json
+
+    data = json.loads(result.output)
+    assert data[0]["dir_name"] == "psy" and data[0]["bpm_max"] == 150.0
