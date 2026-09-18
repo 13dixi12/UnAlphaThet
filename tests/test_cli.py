@@ -56,3 +56,16 @@ def test_crate_add_and_ls(tmp_path):
 
     data = json.loads(result.output)
     assert data[0]["dir_name"] == "psy" and data[0]["bpm_max"] == 150.0
+
+
+def test_vibe_add_and_ls(tmp_path):
+    root = tmp_path / "coll"
+    root.mkdir()
+    cfg = _cfg(tmp_path, root)
+    runner.invoke(app, ["--config", cfg, "crate", "add", "psy"])
+    r = runner.invoke(app, ["--config", cfg, "vibe", "add", "psy", "night", "--hotkey", "n"])
+    assert r.exit_code == 0, r.output
+    result = runner.invoke(app, ["--config", cfg, "--json", "vibe", "ls", "psy"])
+    import json
+
+    assert json.loads(result.output)[0]["name"] == "night"

@@ -144,3 +144,43 @@ def crate_add(
         typer.echo(f"crate already exists: {exc}", err=True)
         raise typer.Exit(code=1) from None
     emit(ctx, c.__dict__, lambda d: f"created crate {d['name']} -> {root / d['dir_name']}")
+
+
+# --- vibes ----------------------------------------------------------------------------
+
+from unalphathet.library import vibes as _vibes  # noqa: E402
+
+vibe_app = typer.Typer(help="Vibes (crate-scoped tags).")
+app.add_typer(vibe_app, name="vibe")
+
+
+def _crate_or_die(conn, dir_name: str):
+    c = _crates.get_crate(conn, dir_name)
+    if c is None:
+        typer.echo(f"no such crate: {dir_name}", err=True)
+        raise typer.Exit(code=1)
+    return c
+
+
+@vibe_app.command("ls")
+def vibe_ls(ctx: typer.Context, crate: str) -> None:
+    """List vibes of a crate."""
+    conn, _, _ = open_ctx(ctx)
+    c = _crate_or_die(conn, crate)
+    rows = [v.__dict__ for v in _vibes.list_vibes(conn, c.id)]
+    emit(ctx, rows, lambda vs: "\n".join(f"{v['hotkey'] or ' '} {v['name']}" for v in vs) or "(no vibes)")
+
+
+@vibe_app.command("add")
+def vibe_add(
+    ctx: typer.Context, crate: str, name: str, hotkey: str | None = typer.Option(None, "--hotkey")
+) -> None:
+    """Add a vibe to a crate."""
+    conn, _, _ = open_ctx(ctx)
+    c = _crate_or_die(conn, crate)
+    try:
+        v = _vibes.add_vibe(conn, c.id, name, hotkey=hotkey)
+    except _vibes.VibeExists:
+        typer.echo(f"vibe already exists: {crate}/{name}", err=True)
+        raise typer.Exit(code=1) from None
+    emit(ctx, v.__dict__, lambda d: f"added {crate}/{d['name']}")
